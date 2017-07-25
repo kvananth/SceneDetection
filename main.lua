@@ -5,15 +5,14 @@ require 'optim'
 -- to specify these at runtime, you can do, e.g.:
 --    $ lr=0.001 th main.lua
 opt = {
-  dataset = 'hdf5',   -- indicates what dataset load to use (in data.lua)
+  dataset = 'simple',   -- indicates what dataset load to use (in data.lua)
   nThreads = 32,        -- how many threads to pre-fetch data
-  batchSize = 2,      -- self-explanatory
+  batchSize = 256,      -- self-explanatory
   loadSize = 256,       -- when loading images, resize first to this size
-  fineSize = 225,       -- crop this size from the loaded image
-  patchSize = 64,       -- size of each grid (i.e, batch_sizex3x64x64)
-  nClasses = 100,       -- number of category
-  lr = 0.005,           -- learning rate
-  lr_decay = 10000,     -- how often to decay learning rate (in epoch's)
+  fineSize = 224,       -- crop this size from the loaded image 
+  nClasses = 401,       -- number of category
+  lr = 0.001,           -- learning rate
+  lr_decay = 30000,     -- how often to decay learning rate (in epoch's)
   beta1 = 0.9,          -- momentum term for adam
   meanIter = 0,         -- how many iterations to retrieve for mean estimation
   saveIter = 10000,     -- write check point on this interval
@@ -24,14 +23,10 @@ opt = {
   randomize = 1,        -- whether to shuffle the data file or not
   cropping = 'random',  -- options for data augmentation
   display_port = 8000,  -- port to push graphs
-  name = 'puzzleMnist',--paths.basename(paths.thisfile()):sub(1,-5), -- the name of the experiment (by default, filename)
-  --data_root = '/nfs_mount/datasets/other/medical/nlm/NLMCXR_png/',
-  --data_list = '/nfs_mount/data/ananth/medical_data/trainList_6k.txt',
+  name = paths.basename(paths.thisfile()):sub(1,-5), -- the name of the experiment (by default, filename)
+  data_root = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/frames/',
+  data_list = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/train.txt',
   mean = {-0.083300798050439,-0.10651495109198,-0.17295466315224},
-  labelDim = 1,
-  labelName = "/images",
-  labelFile = "/nfs_mount/data/ananth/medical_data/train.h5",
-  --labelFile = "/nfs_mount/data/ananth/medical_data/train_6k.h5",
 }
 
 -- one-line argument parser. parses enviroment variables to override the defaults
@@ -46,7 +41,6 @@ torch.setdefaulttensortype('torch.FloatTensor')
 
 -- if using GPU, select indicated one
 if opt.gpu > 0 then
-  require 'cudnn'
   require 'cunn'
   cutorch.setDevice(opt.gpu)
 end
@@ -57,45 +51,36 @@ local data = DataLoader.new(opt.nThreads, opt.dataset, opt)
 print("Dataset: " .. opt.dataset, " Size: ", data:size())
 
 -- define the model
-local net = nn.Sequential()
+local net
 if opt.finetune == '' then -- build network from scratch
-  local features = torch.load('data/imagenet_pretrained_alexnet.t7')
   
-  --[[local features = nn.Sequential()
-  
-  features:add(cudnn.SpatialConvolution(3,96,11,11,4,4,5,5))       -- 224 -> 55
-  features:add(cudnn.ReLU(true))
-  features:add(cudnn.SpatialMaxPooling(3,3,2,2,1,1))               -- 55 ->  27
-  features:add(cudnn.SpatialCrossMapLRN(5, 0.0001,0.75,2))
-  features:add(cudnn.SpatialConvolution(96,256,5,5,1,1,2,2))       --  27 -> 27
-  features:add(cudnn.ReLU(true))
-  features:add(cudnn.SpatialMaxPooling(3,3,2,2,1,1))                   --  27 ->  13
-  features:add(cudnn.SpatialCrossMapLRN(5, 0.0001,0.75,2))
-  features:add(cudnn.SpatialConvolution(256,384,3,3,1,1,1,1))      --  13 ->  13
-  features:add(cudnn.ReLU(true))
-  features:add(cudnn.SpatialConvolution(384,384,3,3,1,1,1,1))      --  13 ->  13
-  features:add(cudnn.ReLU(true))
-  features:add(cudnn.SpatialConvolution(384,256,3,3,1,1,1,1))      --  13 ->  13
-  features:add(cudnn.ReLU(true))
-  features:add(cudnn.SpatialMaxPooling(3,3,2,2))                   -- 13 -> 6
+  local model = torch.load('data/imagenet_pretrained_alexnet.t7')
+  local features = model.features.model
+  features:insert(cudnn.SpatialMaxPooling(3,3,2,2,1,1), 14)
   features:add(nn.View(-1):setNumInputDims(3))
-  features:add(nn.Linear(4096, 4096))
-  features:add(cudnn.ReLU())
+
+  local top = nn.Sequential()
+  top:add(nn.Linear(6400,4096))
+  top:add(cudnn.ReLU(true))
+  top:add(nn.Dropout(0.5))
+  top:add(nn.Linear(4096,2048))
+  top:add(cudnn.ReLU(true))
+  top:add(nn.Dropout(0.5))
+  top:add(nn.Linear(2048,512))
+
+  local branch = nn.Sequential()
+  branch:add(features)
+  branch:add(top)
 
   local siamese_encoder = nn.ParallelTable()
-  siamese_encoder:add(features)
-  siamese_encoder:add(features:clone('weight','bias', 'gradWeight','gradBias'))
+  siamese_encoder:add(branch)
+  siamese_encoder:add(branch:clone('weight','bias', 'gradweight','gradbias'))
 
-  local classifier = nn.Sequential()
-  classifier:add(nn.Linear(2*1024, 4096))
-  classifier:add(cudnn.ReLU())
-  classifier:add(nn.Dropout(0.5))
-  classifier:add(nn.Linear(4096, opt.nClasses))
-
+  net = nn.Sequential()
   net:add(nn.SplitTable(2))
   net:add(siamese_encoder)
   net:add(nn.JoinTable(2))
-  net:add(classifier) ]]--
+
 
   -- initialize the model
   local function weights_init(m)
@@ -108,7 +93,7 @@ if opt.finetune == '' then -- build network from scratch
       if m.bias then m.bias:fill(0) end
     end
   end
-  net:apply(weights_init) -- loop over all layers, applying weights_init
+  --net:apply(weights_init) -- loop over all layers, applying weights_init
 
 else -- load in existing network
   print('loading ' .. opt.finetune)
@@ -118,10 +103,12 @@ end
 print(net)
 
 -- define the loss
-local criterion = nn.CrossEntropyCriterion()
+--local criterion = nn.CrossEntropyCriterion()
+local criterion = nn.HingeEmbeddingCriterion()
+
 
 -- create the data placeholders
-local input = torch.Tensor(opt.batchSize, 2, 3, opt.patchSize, opt.patchSize)
+local input = torch.Tensor(opt.batchSize, 3, opt.fineSize, opt.fineSize)
 local label = torch.Tensor(opt.batchSize)
 local err
 
@@ -139,6 +126,7 @@ end
 
 -- convert to cudnn if needed
 if opt.gpu > 0 and opt.cudnn > 0 then
+  require 'cudnn'
   net = cudnn.convert(net, cudnn)
 end
 
@@ -160,7 +148,6 @@ local fx = function(x)
   data_im,data_label = data:getBatch()
   data_tm:stop()
 
-  print(#data_im)
   -- ship data to GPU
   input:copy(data_im:squeeze())
   label:copy(data_label)
@@ -170,22 +157,7 @@ local fx = function(x)
   err = criterion:forward(output, label)
   local df_do = criterion:backward(output, label)
   net:backward(input, df_do)
- 
-  local _,preds = output:float():sort(2, true)
-   
-   top1 = 0  
-   top5 = 0
-   for i=1, opt.batchSize do 
-     local rank = torch.eq(preds[i], data_label[i]):nonzero()[1][1] 
-     if rank == 1 then 
-        top1 = top1 + 1 
-     end
-     if rank <= 5 then 
-        top5 = top5 + 1
-     end
-   end 
-   top1 = top1:div(opt.batchSize)
-   top5 = top5:div(opt.batchSize)
+  
   -- return gradients
   return err, gradParameters
 end
@@ -213,21 +185,21 @@ for counter = 1,opt.niter do
   optim.adam(fx, parameters, optimState)
   
   -- logging
-  if false then --counter % 10 == 1 then
+  if counter % 10 == 1 then
     table.insert(history, {counter, err})
     disp.plot(history, {win=1, title=opt.name, labels = {"iteration", "err"}})
   end
 
-  if false then --counter % 100 == 1 then
-    w = net.modules[2].modules[1].modules[1].weight:float():clone()
+  if counter % 100 == 1 then
+    w = net.modules[1].weight:float():clone()
     for i=1,w:size(1) do w[i]:mul(1./w[i]:norm()) end
     disp.image(w, {win=2, title=(opt.name .. ' conv1')})
-    --disp.image(data_im:narrow(2,1,1), {win=3, title=(opt.name .. ' batch')})
+    disp.image(data_im, {win=3, title=(opt.name .. ' batch')})
   end
   
-  print(('%s %s Iter: [%7d / %7d]  Time: %.3f  DataTime: %.3f  Err: %.4f top-1: %.2f top-5: %.2f'):format(
+  print(('%s %s Iter: [%7d / %7d]  Time: %.3f  DataTime: %.3f  Err: %.4f'):format(
           opt.name, opt.hostname, counter, opt.niter, tm:time().real, data_tm:time().real,
-          err, top1, top5))
+          err))
 
   -- save checkpoint
   -- :clearState() compacts the model so it takes less space on disk
@@ -242,7 +214,7 @@ for counter = 1,opt.niter do
 
   -- decay the learning rate, if requested
   if opt.lr_decay > 0 and counter % opt.lr_decay == 0 then
-    opt.lr = opt.lr / 5
+    opt.lr = opt.lr / 10
     print('Decreasing learning rate to ' .. opt.lr)
 
     -- create new optimState to reset momentum

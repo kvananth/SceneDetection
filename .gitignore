@@ -1,0 +1,12 @@
+#Tensor files #
+###################
+*.t7
+
+
+#Log files#
+##################
+*.log
+
+#Notebook checkpoint files #
+#################
+*.ipynb

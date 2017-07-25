@@ -2,7 +2,7 @@ require 'torch'
 require 'nn'
 
 opt = {
-  dataset = 'simple',
+  dataset = 'hdf5',
   nThreads = 16,
   batchSize = 128,
   loadSize = 256,
