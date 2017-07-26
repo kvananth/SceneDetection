@@ -56,18 +56,18 @@ local val_data = DataLoader.new(opt.nThreads, opt.dataset, opt)
 print("Val dataset size: ", val_data:size())
 
 function safe_unpack(self)
-   if self.unpack and self.model then
-      return self:unpack()
-   else
-      local model = self.model
-      for k,v in ipairs(model:listModules()) do
-         if v.weight and not v.gradWeight then
-            v.gradWeight = v.weight:clone()
-            v.gradBias = v.bias:clone()
-         end
-      end
-      return model
-   end
+    if self.unpack and self.model then
+        return self:unpack()
+    else
+        local model = self.model
+        for k,v in ipairs(model:listModules()) do
+            if v.weight and not v.gradWeight then
+                v.gradWeight = v.weight:clone()
+                v.gradBias = v.bias:clone()
+            end
+        end
+        return model
+    end
 end
 
 -- define the model
@@ -78,7 +78,7 @@ if opt.finetune == '' then -- build network from scratch
     local prefeatures = safe_unpack(premodel.features)
     local pretop = safe_unpack(premodel.top)
 
-    features = nn.Sequential()
+    --[[features = nn.Sequential()
     features:add(cudnn.SpatialConvolution(3,96,11,11,4,4,2,2))       -- 224 -> 55
     features:add(cudnn.SpatialBatchNormalization(96))
     features:add(cudnn.ReLU(true))
@@ -134,7 +134,12 @@ if opt.finetune == '' then -- build network from scratch
     net = nn.Sequential()
     net:add(nn.SplitTable(2))
     net:add(siamese_encoder)
-    net:add(nn.PairwiseDistance(2))
+    net:add(nn.PairwiseDistance(2))]]
+
+
+    net = nn.Sequential()
+    net:add(prefeatures)
+    net:add(pretop)
 
     -- initialize the model
     local function weights_init(m)
@@ -216,7 +221,11 @@ function eval()
         data_tm:stop()
 
         input:copy(data_im)
-        local output = net:forward(input)
+
+        local output1 = net:forward(input:narrow(2,1,1):reshape(opt.batchSize,3,opt.fineSize,opt.fineSize))
+        local output2 = net:forward(input:narrow(2,2,1):reshape(opt.batchSize,3,opt.fineSize,opt.fineSize))
+        local output = nn.PairwiseDistance(2):cuda():forward(output1, output2)
+
         err = criterion:forward(output, label)
 
         print(output:view(8,8))
@@ -256,7 +265,11 @@ local fx = function(x)
     label:copy(data_label)
 
     -- forward, backwards
-    local output = net:forward(input)
+
+    local output1 = net:forward(input:narrow(2,1,1):reshape(opt.batchSize,3,opt.fineSize,opt.fineSize))
+    local output2 = net:forward(input:narrow(2,2,1):reshape(opt.batchSize,3,opt.fineSize,opt.fineSize))
+    local output = nn.PairwiseDistance(2):cuda():forward(output1, output2)
+
     print(output:view(8,8))
     err = criterion:forward(output, label)
     local df_do = criterion:backward(output, label)
