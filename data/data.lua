@@ -13,10 +13,7 @@ function data.new(n, dataset_name, opt_, split)
         self[k] = v
     end
 
-    if split=='val' then
-        self.data_list = self.data_list_val
-    end
-
+    self.split = split
 
     self.randomize = opt_.randomize
 

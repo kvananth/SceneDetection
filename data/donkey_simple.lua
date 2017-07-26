@@ -26,7 +26,14 @@ function dataset:__init(args)
   -- we use tds.Vec() because they have no memory constraint 
   self.data = tds.Vec()
   self.label = tds.Vec()
-  for line in io.lines(args.data_list) do 
+ 
+  if args.split == 'val' then
+      args.data = args.data_list_val
+  else
+      args.data = args.data_list
+  end  
+ 
+  for line in io.lines(args.data) do 
     local split = {}
     for k in string.gmatch(line, "%S+") do table.insert(split, k) end
     split[2] = tonumber(split[2])
@@ -36,7 +43,7 @@ function dataset:__init(args)
     end
   end
 
-  print('found ' .. #self.data .. ' items')
+  print('found ' .. #self.data .. ' items on ' .. self.split)
 end
 
 function dataset:size()

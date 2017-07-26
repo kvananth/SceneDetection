@@ -25,7 +25,7 @@ opt = {
     name = 'full', -- the name of the experiment (by default, filename)
     data_root = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/frames/',
     data_list = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/train_full.txt',
-    data_list_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/val_full.txt',
+    data_list_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/test_full.txt',
     mean = {-0.083300798050439,-0.10651495109198,-0.17295466315224},
 }
 
@@ -46,11 +46,14 @@ if opt.gpu > 0 then
 end
 
 local DataLoader = paths.dofile('data/data.lua')
-local data = DataLoader.new(opt.nThreads, opt.dataset, opt, 'train')
-print("Dataset: " .. opt.dataset, " Size: ", data:size())
+opt['split'] = 'train'
+local data = DataLoader.new(opt.nThreads, opt.dataset, opt)
+print("Train dataset size: ", data:size())
 
-local val_data = DataLoader.new(opt.nThreads, opt.dataset, opt, 'val')
-print("Dataset: " .. opt.dataset, " Size: ", data:size())
+--local Val_DataLoader = paths.dofile('data/data.lua'
+opt['split'] = 'val'
+local val_data = DataLoader.new(opt.nThreads, opt.dataset, opt)
+print("Val dataset size: ", val_data:size())
 os.exit()
 -- define the model
 local net
