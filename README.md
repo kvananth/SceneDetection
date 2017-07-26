@@ -1,5 +1,4 @@
-<<<<<<< HEAD
-Torch Starter
+Scene Detection on Videos
 =============
 
 This is a simple Torch7 starter package. It can be used  as a simplified kickoff point for a Torch project.
