@@ -47,8 +47,8 @@ end
 function dataset:tableToOutput(dataTable, scalarTable, extraTable)
    local data, scalarLabels, labels
    local quantity = #scalarTable
-   assert(dataTable[1]:dim() == 3)
-   data = torch.Tensor(quantity, 3, self.fineSize, self.fineSize)
+   assert(dataTable[1]:dim() == 4)
+   data = torch.Tensor(quantity, 2, 3, self.fineSize, self.fineSize)
    scalarLabels = torch.LongTensor(quantity):fill(-1111)
    for i=1,#dataTable do
       data[i]:copy(dataTable[i])
@@ -65,10 +65,15 @@ function dataset:sample(quantity)
    local extraTable = {}
    for i=1,quantity do
       local idx = torch.random(1, #self.data)
-      local data_path = self.data_root .. '/' .. self.data[idx]
+      
+      local im1, im2 = self.data[idx]:match("([^,]+),([^,]+)")     
+      im1 = self.data_root .. '/' .. im1 .. '.jpg'
+      im2 = self.data_root .. '/' .. im2 .. '.jpg'
+ 
+      --local data_path = self.data_root .. '/' .. self.data[idx]
       local data_label = self.label[idx]
 
-      local out = self:trainHook(data_path) 
+      local out = self:trainHook({im1,im2}) 
       table.insert(dataTable, out)
       table.insert(labelTable, data_label)
       table.insert(extraTable, self.data[idx])
@@ -89,10 +94,14 @@ function dataset:get(start_idx,stop_idx)
       if idx > #self.data then
         break
       end
-      local data_path = self.data_root .. '/' .. self.data[idx]
+      local im1, im2 = self.data[idx]:match("([^,]+),([^,]+)")
+      im1 = self.data_root .. '/' .. im1 .. '.jpg'
+      im2 = self.data_root .. '/' .. im2 .. '.jpg'
+
+      --local data_path = self.data_root .. '/' .. self.data[idx]
       local data_label = self.label[idx]
 
-      local out = self:trainHook(data_path) 
+      local out = self:trainHook({im1,im2}) 
       table.insert(dataTable, out)
       table.insert(labelTable, data_label)
       table.insert(extraTable, self.data[idx])
@@ -101,39 +110,42 @@ function dataset:get(start_idx,stop_idx)
 end
 
 -- function to load the image, jitter it appropriately (random crops etc.)
-function dataset:trainHook(path)
+function dataset:trainHook(paths)
    collectgarbage()
-   local input = self:loadImage(path)
-   local iW = input:size(3)
-   local iH = input:size(2)
+   local twins = torch.Tensor(#paths,3,self.fineSize,self.fineSize)
+	for ii = 1,#paths do
+	   local input = self:loadImage(paths[ii])
+	   local iW = input:size(3)
+	   local iH = input:size(2)
 
-   -- do random crop
-   local oW = self.fineSize
-   local oH = self.fineSize 
-   local h1
-   local w1
-   if self.cropping == 'random' then
-     h1 = math.ceil(torch.uniform(1e-2, iH-oH))
-     w1 = math.ceil(torch.uniform(1e-2, iW-oW))
-   elseif self.cropping == 'center' then
-     h1 = math.ceil((iH-oH)/2)
-     w1 = math.ceil((iW-oW)/2)
-   else
-     assert(false, 'unknown mode ' .. self.cropping)
-   end
-   local out = image.crop(input, w1, h1, w1 + oW, h1 + oH)
-   assert(out:size(2) == oW)
-   assert(out:size(3) == oH)
-   -- do hflip with probability 0.5
-   if torch.uniform() > 0.5 then out = image.hflip(out); end
-   out:mul(2):add(-1) -- make it [0, 1] -> [-1, 1]
+	   -- do random crop
+	   local oW = self.fineSize
+	   local oH = self.fineSize 
+	   local h1
+	   local w1
+	   if self.cropping == 'random' then
+	     h1 = math.ceil(torch.uniform(1e-2, iH-oH))
+	     w1 = math.ceil(torch.uniform(1e-2, iW-oW))
+	   elseif self.cropping == 'center' then
+	     h1 = math.ceil((iH-oH)/2)
+	     w1 = math.ceil((iW-oW)/2)
+	   else
+	     assert(false, 'unknown mode ' .. self.cropping)
+	   end
+	   local out = image.crop(input, w1, h1, w1 + oW, h1 + oH)
+	   assert(out:size(2) == oW)
+	   assert(out:size(3) == oH)
+	   -- do hflip with probability 0.5
+	   if torch.uniform() > 0.5 then out = image.hflip(out); end
+	   --out:mul(2):add(-1) -- make it [0, 1] -> [-1, 1]
 
-    -- subtract mean
-    for c=1,3 do
-      out[{ c, {}, {} }]:add(-self.mean[c])
-    end
-
-   return out
+	    -- subtract mean
+	   -- for c=1,3 do
+	     -- out[{ c, {}, {} }]:add(-self.mean[c])
+	    --end
+            twins[ii] = out
+	end
+   return twins
 end
 
 -- reads an image disk

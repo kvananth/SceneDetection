@@ -1,20 +1,20 @@
 require 'torch'
 require 'nn'
-
+require 'optim'
 opt = {
-  dataset = 'hdf5',
+  dataset = 'simple',
   nThreads = 16,
   batchSize = 128,
   loadSize = 256,
   fineSize = 224,
   gpu = 1,
   cudnn = 1,
-  model = 'checkpoints/main/iter100000_net.t7',
+  model = '',
   ntest = math.huge,
   randomize = 0,
   cropping = 'center',
-  data_root = '/data/vision/torralba/deepscene/places365_standard/',
-  data_list = '/data/vision/torralba/commonsense/places-resources/places365/val.txt',
+  data_root = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/frames/',
+  data_list = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/test_full.txt',
   mean = {-0.083300798050439,-0.10651495109198,-0.17295466315224}
 }
 
@@ -46,7 +46,7 @@ local net = torch.load(opt.model)
 net:evaluate()
 
 -- create the data placeholders
-local input = torch.Tensor(opt.batchSize, 3, opt.fineSize, opt.fineSize)
+local input = torch.Tensor(opt.batchSize, 2, 3, opt.fineSize, opt.fineSize)
 
 -- ship to GPU
 if opt.gpu > 0 then
@@ -55,10 +55,12 @@ if opt.gpu > 0 then
 end
 
 -- eval
-local top1 = 0
-local top5 = 0
+local acc = 0
 local counter = 0
 local maxiter = math.floor(math.min(data:size(), opt.ntest) / opt.batchSize)
+local outputs, labels
+confusion = optim.ConfusionMatrix({-1,1})
+
 for iter = 1, maxiter do
   collectgarbage()
   
@@ -66,21 +68,27 @@ for iter = 1, maxiter do
 
   input:copy(data_im)
   local output = net:forward(input)
-  local _,preds = output:float():sort(2, true)
-
-  for i=1,opt.batchSize do
-    local rank = torch.eq(preds[i], data_label[i]):nonzero()[1][1]
-    if rank == 1 then
-      top1 = top1 + 1
-    end
-    if rank <= 5 then
-      top5 = top5 + 1
-    end
-  end
-
-  counter = counter + opt.batchSize
   
-  print(('%s: Eval [%8d / %8d]:\t Top1: %.4f  Top5: %.4f'):format(
-    opt.model, iter, maxiter,
-    top1/counter, top5/counter))
+  outputs = (iter==1) and output or outputs:cat(output,1)
+  labels = (iter==1) and data_label or labels:cat(data_label,1)
+
+  
+  output:apply(function(x)
+  		      l = -1
+        	      if x > 1 then
+                          l = 1
+                      end
+                      return l
+                      end);
+
+  --for i = 1,opt.batchSize do
+      --confusion:add(output[i], data_label[i])
+  --end
+  acc = acc + output:eq(data_label:cuda()):sum()
+  counter = counter + opt.batchSize 
 end
+
+torch.save("preds.t7", {outputs:float(), labels})
+
+print(('Summary  %s \t Accuracy: %.4f'):format(opt.model, acc/counter))
+--print(confusion)

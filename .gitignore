@@ -10,3 +10,5 @@
 #Notebook checkpoint files #
 #################
 *.ipynb
+
+*.swp
