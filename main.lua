@@ -59,7 +59,7 @@ os.exit()
 local net
 if opt.finetune == '' then -- build network from scratch
 
-    local model = torch.load('data/imagenet_pretrained_alexnet.t7')
+    local premodel = torch.load('data/imagenet_pretrained_alexnet.t7')
 
     features = nn.Sequential()
     features:add(cudnn.SpatialConvolution(3,96,11,11,4,4,2,2))       -- 224 -> 55
@@ -89,6 +89,25 @@ if opt.finetune == '' then -- build network from scratch
     features:add(cudnn.ReLU(true))
     features:add(nn.Dropout(0.5))
     features:add(nn.Linear(2048,512))
+
+
+    for i=1,#premodel.features.model do
+        local fname = torch.type(features.modules[i])
+        local mname = torch.type(premodel.features.model.modules[i])
+        if fname:find('Convolution') and mname:find('Convolution') then
+            features.modules[i].weight = premodel.features.model.modules[i].weight
+            features.modules[i].bias = premodel.features.model.modules[i].bias
+        end
+    end
+
+    for i=1,#premodel.top.model do
+        local fname = torch.type(features.modules[i+19]) --Linear Layer starts at 20
+        local mname = torch.type(premodel.top.model.modules[i])
+        if fname:find('Linear') and mname:find('Linear') then
+            features.modules[i+19].weight = premodel.top.model.modules[i].weight
+            features.modules[i+19].bias = premodel.top.model.modules[i].bias
+        end
+    end
 
     local siamese_encoder = nn.ParallelTable()
     siamese_encoder:add(features)
