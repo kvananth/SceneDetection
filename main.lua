@@ -54,12 +54,29 @@ print("Train dataset size: ", data:size())
 opt['split'] = 'val'
 local val_data = DataLoader.new(opt.nThreads, opt.dataset, opt)
 print("Val dataset size: ", val_data:size())
-os.exit()
+
+function safe_unpack(self)
+   if self.unpack and self.model then
+      return self:unpack()
+   else
+      local model = self.model
+      for k,v in ipairs(model:listModules()) do
+         if v.weight and not v.gradWeight then
+            v.gradWeight = v.weight:clone()
+            v.gradBias = v.bias:clone()
+         end
+      end
+      return model
+   end
+end
+
 -- define the model
 local net
 if opt.finetune == '' then -- build network from scratch
 
     local premodel = torch.load('data/imagenet_pretrained_alexnet.t7')
+    local prefeatures = safe_unpack(premodel.features)
+    local pretop = safe_unpack(premodel.top)
 
     features = nn.Sequential()
     features:add(cudnn.SpatialConvolution(3,96,11,11,4,4,2,2))       -- 224 -> 55
@@ -93,19 +110,19 @@ if opt.finetune == '' then -- build network from scratch
 
     for i=1,#premodel.features.model do
         local fname = torch.type(features.modules[i])
-        local mname = torch.type(premodel.features.model.modules[i])
+        local mname = torch.type(prefeatures.modules[i])
         if fname:find('Convolution') and mname:find('Convolution') then
-            features.modules[i].weight = premodel.features.model.modules[i].weight
-            features.modules[i].bias = premodel.features.model.modules[i].bias
+            features.modules[i].weight = premodel.features.model.modules[i].weight:clone()
+            features.modules[i].bias = prefeatures.modules[i].bias:clone()
         end
     end
 
     for i=1,#premodel.top.model do
         local fname = torch.type(features.modules[i+19]) --Linear Layer starts at 20
-        local mname = torch.type(premodel.top.model.modules[i])
+        local mname = torch.type(pretop.modules[i])
         if fname:find('Linear') and mname:find('Linear') then
-            features.modules[i+19].weight = premodel.top.model.modules[i].weight
-            features.modules[i+19].bias = premodel.top.model.modules[i].bias
+            features.modules[i+19].weight = premodel.top.model.modules[i].weight:clone()
+            features.modules[i+19].bias = pretop.modules[i].bias:clone()
         end
     end
 
