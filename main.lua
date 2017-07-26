@@ -11,7 +11,7 @@ opt = {
   fineSize = 224,       -- crop this size from the loaded image 
   nClasses = 401,       -- number of category
   lr = 0.001,           -- learning rate
-  lr_decay = 3000,     -- how often to decay learning rate (in epoch's)
+  lr_decay = 500,     -- how often to decay learning rate (in epoch's)
   beta1 = 0.9,          -- momentum term for adam
   meanIter = 0,         -- how many iterations to retrieve for mean estimation
   saveIter = 1000,     -- write check point on this interval
@@ -19,7 +19,7 @@ opt = {
   gpu = 1,              -- which GPU to use; consider using CUDA_VISIBLE_DEVICES instead
   cudnn = 1,            -- whether to use cudnn or not
   finetune = '',        -- if set, will load this network instead of starting from scratch
-  randomize = 0,        -- whether to shuffle the data file or not
+  randomize = 1,        -- whether to shuffle the data file or not
   cropping = 'random',  -- options for data augmentation
   display_port = 9000,  -- port to push graphs
   name = 'full', -- the name of the experiment (by default, filename)
@@ -156,6 +156,7 @@ confusion = optim.ConfusionMatrix({-1,1})
 
 local acc = 0
 local data_im,data_label
+local preds
 local fx = function(x)
   gradParameters:zero()
   
@@ -172,7 +173,7 @@ local fx = function(x)
   
   -- forward, backwards
   local output = net:forward(input)
-  --print(output:view(8,8))
+  print(output:view(8,8))
   err = criterion:forward(output, label)
   local df_do = criterion:backward(output, label)
   net:backward(input, df_do)
@@ -194,11 +195,13 @@ local fx = function(x)
                       return l
                       end);
 
+
    -- update confusion
    --[[for i = 1,opt.batchSize do
        confusion:add(output[i], data_label[i])
    end--]]
  
+  preds = output:eq(label)
   acc = output:eq(label):sum()
   acc = acc/output:size(1)
   -- return gradients
@@ -206,7 +209,7 @@ local fx = function(x)
 end
 
 local history = {}
-
+local lr_history = {}
 -- parameters for the optimization
 -- very important: you must only create this table once! 
 -- the optimizer will add fields to this table (such as momentum)
@@ -237,22 +240,31 @@ for counter = 1,opt.niter do
     w = net.modules[2].modules[1].modules[1].weight:float():clone()
     for i=1,w:size(1) do w[i]:mul(1./w[i]:norm()) end
     disp.image(w, {win=2, title=(opt.name .. ' conv1')})
+
+    local correctPreds = preds:eq(1):nonzero()
+    local incorrectPreds = preds:eq(0):nonzero()
+
     local nn = 10 -- # of imgs to display
+    preds = preds:narrow(1,1,nn)
     local im1 = data_im:narrow(2,1,1):reshape(64,3,224,224):narrow(1,1,nn)
     local im2 = data_im:narrow(2,2,1):reshape(64,3,224,224):narrow(1,1,nn)
     local disp_imgs1, disp_imgs2
+    
     for i=1,nn do
         dim = 3
 	    if i<6 then
-		im = im1[i]:cat(im2[i],3)
+		local im = im1[i]:cat(im2[i],3)
 		disp_imgs1 = (i==1) and im or disp_imgs1:cat(im,dim)        
 	    else
-		im = im1[i]:cat(im2[i],3)
+		local im = im1[i]:cat(im2[i],3)
 		disp_imgs2 = (i==6) and im or disp_imgs2:cat(im,dim)
 	    end
     end
     disp.images({disp_imgs1:cat(disp_imgs2,2)}, { win=3, width=1000})
-    --disp.image(data_im, {win=3, title=(opt.name .. ' batch')})
+    
+    table.insert(lr_history, {counter, optimState.learningRate})
+    disp.plot(history, {win=4, title=opt.name, labels = {"iteration", "lr"}})
+    disp.text(torch.serialize(preds), {win=5})
   end
 
   print(('%s %s Iter: [%7d / %7d]  Time: %.3f  DataTime: %.3f  Err: %.4f Acc: %.6f'):format(

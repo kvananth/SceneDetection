@@ -4,7 +4,7 @@ require 'optim'
 opt = {
   dataset = 'simple',
   nThreads = 16,
-  batchSize = 128,
+  batchSize = 64,
   loadSize = 256,
   fineSize = 224,
   gpu = 1,
@@ -68,7 +68,7 @@ for iter = 1, maxiter do
 
   input:copy(data_im)
   local output = net:forward(input)
-  
+  print(output:view(8,8)) 
   outputs = (iter==1) and output or outputs:cat(output,1)
   labels = (iter==1) and data_label or labels:cat(data_label,1)
 
