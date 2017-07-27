@@ -155,20 +155,20 @@ do
     local pretop = safe_unpack(premodel.top)
 
     for i=1,#premodel.features.model do
-        local fname = torch.type(features.modules[i])
+        local fname = torch.type(net.modules[2].modules[1].modules[i])
         local mname = torch.type(prefeatures.modules[i])
         if fname:find('Convolution') and mname:find('Convolution') then
-            features.modules[i].weight = premodel.features.model.modules[i].weight:clone()
-            features.modules[i].bias = prefeatures.modules[i].bias:clone()
+            net.modules[2].modules[1].modules[i].weight = premodel.features.model.modules[i].weight:clone()
+            net.modules[2].modules[1].modules[i].bias = prefeatures.modules[i].bias:clone()
         end
     end
 
     for i=1,#premodel.top.model do
-        local fname = torch.type(features.modules[i+19]) --Linear Layer starts at 20
+        local fname = torch.type(net.modules[2].modules[1].modules[i+19]) --Linear Layer starts at 20
         local mname = torch.type(pretop.modules[i])
         if fname:find('Linear') and mname:find('Linear') then
-            features.modules[i+19].weight = premodel.top.model.modules[i].weight:clone()
-            features.modules[i+19].bias = pretop.modules[i].bias:clone()
+            net.modules[2].modules[1].modules[i+19].weight = premodel.top.model.modules[i].weight:clone()
+            net.modules[2].modules[1].modules[i+19].bias = pretop.modules[i].bias:clone()
         end
     end
 end
@@ -205,10 +205,11 @@ function eval()
     local ntest = math.huge
     local maxiter = math.floor(math.min(val_data:size(), ntest) / opt.batchSize)
     local outputs, labels, extra
-
-    net:testing()
+    local counter = 0
+    local Err = 0
+    net:evaluate()
     acc = 0
-
+    
     for iter = 1, maxiter do
         collectgarbage()
 
@@ -220,6 +221,7 @@ function eval()
         input:copy(data_im:squeeze())
         local output = net:forward(input)
         err = criterion:forward(output, label)
+        Err = Err + err
 
         print(output:view(8,8))
         outputs = (iter==1) and output or outputs:cat(output,1)
@@ -236,10 +238,14 @@ function eval()
         --for i = 1,opt.batchSize do
         --confusion:add(output[i], data_label[i])
         --end
-        acc = acc + output:eq(data_label:cuda()):sum()
+        local ac =  output:eq(data_label:cuda()):sum()
+        acc = acc + ac
         counter = counter + opt.batchSize
+        
+        print(('Eval [%8d / %8d] Err: %.6f Acc: %.4f'):format(iter, maxiter, err, ac/opt.batchSize))
     end
-    return err, acc
+    print(('Eval Summary Err: %.6f Acc: %.4f'):format(Err/counter, acc/counter))
+    return Err/counter, acc/counter
 end
 
 local fx = function(x)
@@ -315,9 +321,13 @@ for counter = 1,opt.niter do
 
     -- do one iteration
     optim.adam(fx, parameters, optimState)
+    print(('%s %s Iter: [%7d / %7d]  Time: %.3f  DataTime: %.3f  Err: %.4f Acc: %.6f'):format(
+        opt.name, opt.hostname, counter, opt.niter, tm:time().real, data_tm:time().real, err, acc))
+    --print(confusion)
 
     if counter == 1 or counter % opt.saveIter == 0 then
         local valerr, valacc = eval()
+
 
         table.insert(val_history, {counter, valerr})
         disp.plot(history, {win=5, title=opt.name, labels = {"iteration", "valError"}})
@@ -371,9 +381,6 @@ for counter = 1,opt.niter do
         disp.plot(history, {win=4, title=opt.name, labels = {"iteration", "lr"}})
     end
 
-    print(('%s %s Iter: [%7d / %7d]  Time: %.3f  DataTime: %.3f  Err: %.4f Acc: %.6f'):format(
-        opt.name, opt.hostname, counter, opt.niter, tm:time().real, data_tm:time().real, err, acc))
-    --print(confusion)
     confusion:zero()
     acc = 0
 
