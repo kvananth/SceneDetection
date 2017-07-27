@@ -21,11 +21,11 @@ opt = {
     finetune = '',        -- if set, will load this network instead of starting from scratch
     randomize = 1,        -- whether to shuffle the data file or not
     cropping = 'random',  -- options for data augmentation
-    display_port = 9000,  -- port to push graphs
-    name = 'full', -- the name of the experiment (by default, filename)
+    display_port = 9002,  -- port to push graphs
+    name = 'small', -- the name of the experiment (by default, filename)
     data_root = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/frames/',
-    data_list = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/train_full.txt',
-    data_list_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/test_full.txt',
+    data_list = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/train.txt',
+    data_list_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/test.txt',
     mean = {-0.083300798050439,-0.10651495109198,-0.17295466315224},
 }
 
