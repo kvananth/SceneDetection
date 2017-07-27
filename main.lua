@@ -312,6 +312,7 @@ local optimState = {
 
 
 print('Starting Optimization...')
+local valerr, valacc = 0
 
 -- train main loop
 for counter = 1,opt.niter do
@@ -326,11 +327,11 @@ for counter = 1,opt.niter do
     --print(confusion)
 
     if counter == 1 or counter % opt.saveIter == 0 then
-        local valerr, valacc = eval()
+        valerr, valacc = eval()
 
 
-        table.insert(val_history, {counter, valerr})
-        disp.plot(val_history, {win=5, title=opt.name, labels = {"iteration", "valError"}})
+        --table.insert(val_history, {counter, valerr})
+        --disp.plot(val_history, {win=5, title=opt.name, labels = {"iteration", "valError"}})
         table.insert(acc_history, {counter, valacc})
         disp.plot(acc_history, {win=6, title=opt.name, labels = {"iteration", "accuracy"}})
 
@@ -347,8 +348,8 @@ for counter = 1,opt.niter do
 
     -- logging
     if counter % 10 == 1 then
-        table.insert(history, {counter, err})
-        disp.plot(history, {win=1, title=opt.name, labels = {"iteration", "err"}})
+        table.insert(history, {counter, err, valerr})
+        disp.plot(history, {win=1, title=opt.name, labels = {"iteration", "Train Err", "Val Err"}})
     end
 
     if counter % 100 == 1 then
