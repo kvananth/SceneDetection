@@ -74,11 +74,7 @@ end
 local net
 if opt.finetune == '' then -- build network from scratch
 
-    local premodel = torch.load('data/imagenet_pretrained_alexnet.t7')
-    local prefeatures = safe_unpack(premodel.features)
-    local pretop = safe_unpack(premodel.top)
-
-    --[[features = nn.Sequential()
+    features = nn.Sequential()
     features:add(cudnn.SpatialConvolution(3,96,11,11,4,4,2,2))       -- 224 -> 55
     features:add(cudnn.SpatialBatchNormalization(96))
     features:add(cudnn.ReLU(true))
@@ -107,40 +103,20 @@ if opt.finetune == '' then -- build network from scratch
     features:add(nn.Dropout(0.5))
     features:add(nn.Linear(2048,512))
 
-
-    for i=1,#premodel.features.model do
-        local fname = torch.type(features.modules[i])
-        local mname = torch.type(prefeatures.modules[i])
-        if fname:find('Convolution') and mname:find('Convolution') then
-            features.modules[i].weight = premodel.features.model.modules[i].weight:clone()
-            features.modules[i].bias = prefeatures.modules[i].bias:clone()
-        end
-    end
-
-    for i=1,#premodel.top.model do
-        local fname = torch.type(features.modules[i+19]) --Linear Layer starts at 20
-        local mname = torch.type(pretop.modules[i])
-        if fname:find('Linear') and mname:find('Linear') then
-            features.modules[i+19].weight = premodel.top.model.modules[i].weight:clone()
-            features.modules[i+19].bias = pretop.modules[i].bias:clone()
-        end
-    end
-
     local siamese_encoder = nn.ParallelTable()
     siamese_encoder:add(features)
-    --siamese_encoder:add(branchB)
     siamese_encoder:add(features:clone('weight','bias', 'gradWeight','gradBias'))
 
     net = nn.Sequential()
     net:add(nn.SplitTable(2))
     net:add(siamese_encoder)
-    net:add(nn.PairwiseDistance(2))]]
+    net:add(nn.PairwiseDistance(2))
 
 
-    net = nn.Sequential()
+    --[[net = nn.Sequential()
     net:add(prefeatures:add(nn.View(-1):setNumInputDims(3)))
     net:add(pretop)
-    net.modules[2].modules[1] = nn.Linear(57600, 4096)
+    net.modules[2].modules[1] = nn.Linear(57600, 4096)]]
 
     -- initialize the model
     local function weights_init(m)
@@ -191,6 +167,28 @@ end
 
 -- get a vector of parameters
 local parameters, gradParameters = net:getParameters()
+
+local premodel = torch.load('data/imagenet_pretrained_alexnet.t7')
+local prefeatures = safe_unpack(premodel.features)
+local pretop = safe_unpack(premodel.top)
+
+for i=1,#premodel.features.model do
+    local fname = torch.type(features.modules[i])
+    local mname = torch.type(prefeatures.modules[i])
+    if fname:find('Convolution') and mname:find('Convolution') then
+        features.modules[i].weight = premodel.features.model.modules[i].weight:clone()
+        features.modules[i].bias = prefeatures.modules[i].bias:clone()
+    end
+end
+
+for i=1,#premodel.top.model do
+    local fname = torch.type(features.modules[i+19]) --Linear Layer starts at 20
+    local mname = torch.type(pretop.modules[i])
+    if fname:find('Linear') and mname:find('Linear') then
+        features.modules[i+19].weight = premodel.top.model.modules[i].weight:clone()
+        features.modules[i+19].bias = pretop.modules[i].bias:clone()
+    end
+end
 
 -- show graphics
 disp = require 'display'
