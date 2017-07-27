@@ -74,7 +74,7 @@ end
 local net
 if opt.finetune == '' then -- build network from scratch
 
-    features = nn.Sequential()
+    local features = nn.Sequential()
     features:add(cudnn.SpatialConvolution(3,96,11,11,4,4,2,2))       -- 224 -> 55
     features:add(cudnn.SpatialBatchNormalization(96))
     features:add(cudnn.ReLU(true))
@@ -112,12 +112,6 @@ if opt.finetune == '' then -- build network from scratch
     net:add(siamese_encoder)
     net:add(nn.PairwiseDistance(2))
 
-
-    --[[net = nn.Sequential()
-    net:add(prefeatures:add(nn.View(-1):setNumInputDims(3)))
-    net:add(pretop)
-    net.modules[2].modules[1] = nn.Linear(57600, 4096)]]
-
     -- initialize the model
     local function weights_init(m)
         local name = torch.type(m)
@@ -152,38 +146,40 @@ local err
 local tm = torch.Timer()
 local data_tm = torch.Timer()
 
+-- get a vector of parameters
+local parameters, gradParameters = net:getParameters()
+
+do
+    local premodel = torch.load('data/imagenet_pretrained_alexnet.t7')
+    local prefeatures = safe_unpack(premodel.features)
+    local pretop = safe_unpack(premodel.top)
+
+    for i=1,#premodel.features.model do
+        local fname = torch.type(features.modules[i])
+        local mname = torch.type(prefeatures.modules[i])
+        if fname:find('Convolution') and mname:find('Convolution') then
+            features.modules[i].weight = premodel.features.model.modules[i].weight:clone()
+            features.modules[i].bias = prefeatures.modules[i].bias:clone()
+        end
+    end
+
+    for i=1,#premodel.top.model do
+        local fname = torch.type(features.modules[i+19]) --Linear Layer starts at 20
+        local mname = torch.type(pretop.modules[i])
+        if fname:find('Linear') and mname:find('Linear') then
+            features.modules[i+19].weight = premodel.top.model.modules[i].weight:clone()
+            features.modules[i+19].bias = pretop.modules[i].bias:clone()
+        end
+    end
+end
+
+
 -- ship everything to GPU if needed
 if opt.gpu > 0 then
     input = input:cuda()
     label = label:cuda()
     net:cuda()
     criterion:cuda()
-end
-
-
--- get a vector of parameters
-local parameters, gradParameters = net:getParameters()
-
-local premodel = torch.load('data/imagenet_pretrained_alexnet.t7')
-local prefeatures = safe_unpack(premodel.features)
-local pretop = safe_unpack(premodel.top)
-
-for i=1,#premodel.features.model do
-    local fname = torch.type(features.modules[i])
-    local mname = torch.type(prefeatures.modules[i])
-    if fname:find('Convolution') and mname:find('Convolution') then
-        features.modules[i].weight = premodel.features.model.modules[i].weight:clone()
-        features.modules[i].bias = prefeatures.modules[i].bias:clone()
-    end
-end
-
-for i=1,#premodel.top.model do
-    local fname = torch.type(features.modules[i+19]) --Linear Layer starts at 20
-    local mname = torch.type(pretop.modules[i])
-    if fname:find('Linear') and mname:find('Linear') then
-        features.modules[i+19].weight = premodel.top.model.modules[i].weight:clone()
-        features.modules[i+19].bias = pretop.modules[i].bias:clone()
-    end
 end
 
 -- convert to cudnn if needed
@@ -204,11 +200,12 @@ local confusion = optim.ConfusionMatrix({-1,1})
 local acc = 0
 local data_im,data_label
 local preds
-local outputs, labels, extra
 
 function eval()
     local ntest = math.huge
     local maxiter = math.floor(math.min(val_data:size(), ntest) / opt.batchSize)
+    local outputs, labels, extra
+
     net:testing()
     acc = 0
 
@@ -220,12 +217,8 @@ function eval()
         data_im, data_label, extra = val_data:getBatch()
         data_tm:stop()
 
-        input:copy(data_im)
-
-        --local output1 = net:forward(input:narrow(2,1,1):reshape(opt.batchSize,3,opt.fineSize,opt.fineSize))
-        --local output2 = net:forward(input:narrow(2,2,1):reshape(opt.batchSize,3,opt.fineSize,opt.fineSize))
+        input:copy(data_im:squeeze())
         local output = net:forward(input)
-
         err = criterion:forward(output, label)
 
         print(output:view(8,8))
@@ -265,19 +258,14 @@ local fx = function(x)
     label:copy(data_label)
 
     -- forward, backwards
-
-    --local output1 = net:forward(input:narrow(2,1,1):reshape(opt.batchSize,3,opt.fineSize,opt.fineSize))
-    --local output2 = net:forward(input:narrow(2,2,1):reshape(opt.batchSize,3,opt.fineSize,opt.fineSize))
-    local output = net:cuda():forward(input)
-
+    local output = net:forward(input)
     err = criterion:forward(output, label)
     local df_do = criterion:backward(output, label)
-    
 
     -- locals:
     local norm,sign= torch.norm,torch.sign
     -- Loss:
-    lambda = 0 --0.2
+    local lambda = 0 --0.2
     err = err + lambda * norm(parameters,2)^2/2
     -- Gradients:
     gradParameters:add(parameters:clone():mul(lambda))
@@ -298,7 +286,7 @@ local fx = function(x)
 
     preds = output:eq(label)
     acc = output:eq(label):sum()
-    acc = acc/output:size(1)
+    acc = acc*100/output:size(1)
     -- return gradients
     return err, gradParameters
 end
@@ -328,7 +316,7 @@ for counter = 1,opt.niter do
     -- do one iteration
     optim.adam(fx, parameters, optimState)
 
-    if counter % opt.saveIter == 0 then
+    if counter == 1 or counter % opt.saveIter == 0 then
         local valerr, valacc = eval()
 
         table.insert(val_history, {counter, valerr})
