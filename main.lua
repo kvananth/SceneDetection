@@ -330,9 +330,9 @@ for counter = 1,opt.niter do
 
 
         table.insert(val_history, {counter, valerr})
-        disp.plot(history, {win=5, title=opt.name, labels = {"iteration", "valError"}})
+        disp.plot(val_history, {win=5, title=opt.name, labels = {"iteration", "valError"}})
         table.insert(acc_history, {counter, valacc})
-        disp.plot(history, {win=6, title=opt.name, labels = {"iteration", "accuracy"}})
+        disp.plot(acc_history, {win=6, title=opt.name, labels = {"iteration", "accuracy"}})
 
         -- save checkpoint
         -- :clearState() compacts the model so it takes less space on disk
@@ -378,7 +378,7 @@ for counter = 1,opt.niter do
         disp.images({disp_imgs1:cat(disp_imgs2,2)}, { win=3, width=1000})
 
         table.insert(lr_history, {counter, optimState.learningRate})
-        disp.plot(history, {win=4, title=opt.name, labels = {"iteration", "lr"}})
+        disp.plot(lr_history, {win=4, title=opt.name, labels = {"iteration", "lr"}})
     end
 
     confusion:zero()
