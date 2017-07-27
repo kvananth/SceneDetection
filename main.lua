@@ -138,8 +138,9 @@ if opt.finetune == '' then -- build network from scratch
 
 
     net = nn.Sequential()
-    net:add(prefeatures)
+    net:add(prefeatures:add(nn.View(-1):setNumInputDims(3)))
     net:add(pretop)
+    net.modules[2].modules[1] = nn.Linear(57600, 4096)
 
     -- initialize the model
     local function weights_init(m)
@@ -268,13 +269,14 @@ local fx = function(x)
 
     local output1 = net:forward(input:narrow(2,1,1):reshape(opt.batchSize,3,opt.fineSize,opt.fineSize))
     local output2 = net:forward(input:narrow(2,2,1):reshape(opt.batchSize,3,opt.fineSize,opt.fineSize))
-    local output = nn.PairwiseDistance(2):cuda():forward(output1, output2)
+    local output = nn.PairwiseDistance(2):cuda():forward({output1, output2})
 
-    print(output:view(8,8))
     err = criterion:forward(output, label)
     local df_do = criterion:backward(output, label)
-    net:backward(input, df_do)
-
+    
+    net:backward(input:narrow(2,1,1):reshape(opt.batchSize,3,opt.fineSize,opt.fineSize), df_do)
+    gradParameters:zero()
+    net:backward(input:narrow(2,2,1):reshape(opt.batchSize,3,opt.fineSize,opt.fineSize), df_do)
 
     -- locals:
     local norm,sign= torch.norm,torch.sign
