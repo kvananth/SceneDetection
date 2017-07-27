@@ -219,6 +219,7 @@ function eval()
         data_tm:stop()
 
         input:copy(data_im:squeeze())
+        label:copy(data_label)
         local output = net:forward(input)
         err = criterion:forward(output, label)
         Err = Err + err
@@ -244,8 +245,8 @@ function eval()
         
         print(('Eval [%8d / %8d] Err: %.6f Acc: %.4f'):format(iter, maxiter, err, ac/opt.batchSize))
     end
-    print(('Eval Summary Err: %.6f Acc: %.4f'):format(Err/counter, acc/counter))
-    return Err/counter, acc/counter
+    print(('Eval Summary Err: %.6f Acc: %.4f'):format(Err/maxiter, acc/counter))
+    return Err/maxiter, acc/counter
 end
 
 local fx = function(x)
@@ -267,6 +268,7 @@ local fx = function(x)
     local output = net:forward(input)
     err = criterion:forward(output, label)
     local df_do = criterion:backward(output, label)
+    net:backward(input, df_do)
 
     -- locals:
     local norm,sign= torch.norm,torch.sign

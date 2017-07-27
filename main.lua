@@ -24,8 +24,8 @@ opt = {
     display_port = 9000,  -- port to push graphs
     name = 'full', -- the name of the experiment (by default, filename)
     data_root = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/frames/',
-    data_list = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/train_full.txt',
-    data_list_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/test_full.txt',
+    data_list = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/train.txt',
+    data_list_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/test.txt',
     mean = {-0.083300798050439,-0.10651495109198,-0.17295466315224},
 }
 
@@ -149,7 +149,7 @@ local data_tm = torch.Timer()
 -- get a vector of parameters
 local parameters, gradParameters = net:getParameters()
 
-do
+--[[do
     local premodel = torch.load('data/imagenet_pretrained_alexnet.t7')
     local prefeatures = safe_unpack(premodel.features)
     local pretop = safe_unpack(premodel.top)
@@ -171,7 +171,7 @@ do
             net.modules[2].modules[1].modules[i+19].bias = pretop.modules[i].bias:clone()
         end
     end
-end
+end]]
 
 
 -- ship everything to GPU if needed
@@ -212,20 +212,21 @@ function eval()
     
     for iter = 1, maxiter do
         collectgarbage()
+        err = 0
 
         data_tm:reset(); data_tm:resume()
-        local data_im, data_label
         data_im, data_label, extra = val_data:getBatch()
         data_tm:stop()
 
         input:copy(data_im:squeeze())
+	label:copy(data_label)
         local output = net:forward(input)
         err = criterion:forward(output, label)
         Err = Err + err
 
         print(output:view(8,8))
-        outputs = (iter==1) and output or outputs:cat(output,1)
-        labels = (iter==1) and data_label or labels:cat(data_label,1)
+        --outputs = (iter==1) and output or outputs:cat(output,1)
+        --labels = (iter==1) and data_label or labels:cat(data_label,1)
 
         output:apply(function(x)
             l = -1
@@ -244,8 +245,8 @@ function eval()
         
         print(('Eval [%8d / %8d] Err: %.6f Acc: %.4f'):format(iter, maxiter, err, ac/opt.batchSize))
     end
-    print(('Eval Summary Err: %.6f Acc: %.4f'):format(Err/counter, acc/counter))
-    return Err/counter, acc/counter
+    print(('Eval Summary Err: %.6f Acc: %.4f'):format(Err/maxiter, acc/counter))
+    return Err/maxiter, acc/counter
 end
 
 local fx = function(x)
@@ -267,11 +268,12 @@ local fx = function(x)
     local output = net:forward(input)
     err = criterion:forward(output, label)
     local df_do = criterion:backward(output, label)
+    net:backward(input, df_do)
 
     -- locals:
     local norm,sign= torch.norm,torch.sign
     -- Loss:
-    local lambda = 0 --0.2
+    local lambda = 0.1 --0.2
     err = err + lambda * norm(parameters,2)^2/2
     -- Gradients:
     gradParameters:add(parameters:clone():mul(lambda))
