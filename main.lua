@@ -98,10 +98,10 @@ if opt.finetune == '' then -- build network from scratch
     features:add(nn.Linear(9216,4096))
     features:add(cudnn.ReLU(true))
     features:add(nn.Dropout(0.5))
-    features:add(nn.Linear(4096,2048))
+    features:add(nn.Linear(4096,4096))
     features:add(cudnn.ReLU(true))
     features:add(nn.Dropout(0.5))
-    features:add(nn.Linear(2048,512))
+    features:add(nn.Linear(4096,512))
 
     local siamese_encoder = nn.ParallelTable()
     siamese_encoder:add(features)
@@ -160,10 +160,6 @@ if opt.gpu > 0 then
     criterion:cuda()
 end
 
--- convert to cudnn if needed
-if opt.gpu > 0 and opt.cudnn > 0 then
-    net = cudnn.convert(net, cudnn)
-end
 
 -- get a vector of parameters
 local parameters, gradParameters = net:getParameters()
@@ -188,6 +184,11 @@ for i=1,#premodel.top.model do
         features.modules[i+19].weight = premodel.top.model.modules[i].weight:clone()
         features.modules[i+19].bias = pretop.modules[i].bias:clone()
     end
+end
+
+-- convert to cudnn if needed
+if opt.gpu > 0 and opt.cudnn > 0 then
+    net = cudnn.convert(net, cudnn)
 end
 
 -- show graphics
@@ -221,9 +222,9 @@ function eval()
 
         input:copy(data_im)
 
-        local output1 = net:forward(input:narrow(2,1,1):reshape(opt.batchSize,3,opt.fineSize,opt.fineSize))
-        local output2 = net:forward(input:narrow(2,2,1):reshape(opt.batchSize,3,opt.fineSize,opt.fineSize))
-        local output = nn.PairwiseDistance(2):cuda():forward(output1, output2)
+        --local output1 = net:forward(input:narrow(2,1,1):reshape(opt.batchSize,3,opt.fineSize,opt.fineSize))
+        --local output2 = net:forward(input:narrow(2,2,1):reshape(opt.batchSize,3,opt.fineSize,opt.fineSize))
+        local output = net:forward(input)
 
         err = criterion:forward(output, label)
 
@@ -265,16 +266,13 @@ local fx = function(x)
 
     -- forward, backwards
 
-    local output1 = net:forward(input:narrow(2,1,1):reshape(opt.batchSize,3,opt.fineSize,opt.fineSize))
-    local output2 = net:forward(input:narrow(2,2,1):reshape(opt.batchSize,3,opt.fineSize,opt.fineSize))
-    local output = nn.PairwiseDistance(2):cuda():forward({output1, output2})
+    --local output1 = net:forward(input:narrow(2,1,1):reshape(opt.batchSize,3,opt.fineSize,opt.fineSize))
+    --local output2 = net:forward(input:narrow(2,2,1):reshape(opt.batchSize,3,opt.fineSize,opt.fineSize))
+    local output = net:cuda():forward(input)
 
     err = criterion:forward(output, label)
     local df_do = criterion:backward(output, label)
     
-    net:backward(input:narrow(2,1,1):reshape(opt.batchSize,3,opt.fineSize,opt.fineSize), df_do)
-    gradParameters:zero()
-    net:backward(input:narrow(2,2,1):reshape(opt.batchSize,3,opt.fineSize,opt.fineSize), df_do)
 
     -- locals:
     local norm,sign= torch.norm,torch.sign
