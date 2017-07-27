@@ -70,6 +70,7 @@ function safe_unpack(self)
     end
 end
 
+local parameters, gradParameters
 -- define the model
 local net
 if opt.finetune == '' then -- build network from scratch
@@ -102,6 +103,12 @@ if opt.finetune == '' then -- build network from scratch
     features:add(cudnn.ReLU(true))
     features:add(nn.Dropout(0.5))
     features:add(nn.Linear(4096,512))
+
+    if opt.gpu > 0 then
+        features:cuda()
+    end
+
+    parameters, gradParameters = features:getParameters()
 
     local siamese_encoder = nn.ParallelTable()
     siamese_encoder:add(features)
@@ -145,9 +152,6 @@ local err
 -- timers to roughly profile performance
 local tm = torch.Timer()
 local data_tm = torch.Timer()
-
--- get a vector of parameters
-local parameters, gradParameters = net:getParameters()
 
 --[[do
     local premodel = torch.load('data/imagenet_pretrained_alexnet.t7')
@@ -219,7 +223,8 @@ function eval()
         data_tm:stop()
 
         input:copy(data_im:squeeze())
-	label:copy(data_label)
+	    label:copy(data_label)
+
         local output = net:forward(input)
         err = criterion:forward(output, label)
         Err = Err + err
