@@ -64,6 +64,3 @@ If you want to see graphics and the loss over time, in a different shell on the 
 ```bash
 $ th -ldisplay.start 8000 0.0.0.0
 ```
-then navigate to ```http://HOST.csail.mit.edu:8000``` in your browser. Every 10th iteration it will
-push graphs. 
-=======
