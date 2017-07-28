@@ -1,5 +1,4 @@
 ## Scene Detection on Videos
-=============
 
 Installation
 ------------
