@@ -315,6 +315,10 @@ local acc_history = {}
 local optimState = {
     learningRate = opt.lr,
     beta1 = opt.beta1,
+    learningRateDecay = 0.0,
+    momentum = 0.9,
+    dampening = 0.0,
+    weightDecay = 5e-4
 }
 
 
@@ -328,7 +332,9 @@ for counter = 1,opt.niter do
     tm:reset()
 
     -- do one iteration
-    optim.adam(fx, parameters, optimState)
+    --optim.adam(fx, parameters, optimState)
+    optim.sgd(fx, parameters, optimState)
+
     print(('%s %s Iter: [%7d / %7d]  Time: %.3f  DataTime: %.3f  Err: %.4f Acc: %.2f'):format(
         opt.name, opt.hostname, counter, opt.niter, tm:time().real, data_tm:time().real, err, acc))
     --print(confusion)
