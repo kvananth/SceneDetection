@@ -6,27 +6,28 @@ require 'optim'
 opt = {
     dataset = 'simple',   -- indicates what dataset load to use (in data.lua)
     nThreads = 8,        -- how many threads to pre-fetch data
-    batchSize = 64,      -- self-explanatory
+    batchSize = 16,      -- self-explanatory
     loadSize = 256,       -- when loading images, resize first to this size
     fineSize = 224,       -- crop this size from the loaded image
     nClasses = 401,       -- number of category
     lr = 0.001,           -- learning rate
-    lr_decay = 2000,     -- how often to decay learning rate (in epoch's)
+    lr_decay = 5000,     -- how often to decay learning rate (in epoch's)
     beta1 = 0.9,          -- momentum term for adam
     meanIter = 0,         -- how many iterations to retrieve for mean estimation
-    saveIter = 1000,     -- write check point on this interval
+    saveIter = 2000,     -- write check point on this interval
     niter = 100000,       -- number of iterations through dataset
     gpu = 1,              -- which GPU to use; consider using CUDA_VISIBLE_DEVICES instead
     cudnn = 1,            -- whether to use cudnn or not
     finetune = '',        -- if set, will load this network instead of starting from scratch
-    randomize = 1,        -- whether to shuffle the data file or not
+    randomize = 0,        -- whether to shuffle the data file or not
     cropping = 'random',  -- options for data augmentation
-    display_port = 9001,  -- port to push graphs
+    display_port = 9000,  -- port to push graphs
     name = 'full', -- the name of the experiment (by default, filename)
     data_root = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/frames/',
-    data_list = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/train_small.txt',
-    data_list_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/test_small.txt',
+    data_list = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/train.txt',
+    data_list_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/test.txt',
     mean = {-0.083300798050439,-0.10651495109198,-0.17295466315224},
+    margin = 1, -- margin for loss function
 }
 
 -- one-line argument parser. parses enviroment variables to override the defaults
@@ -192,9 +193,10 @@ if opt.gpu > 0 and opt.cudnn > 0 then
     net = cudnn.convert(net, cudnn)
 end
 
-for i=1,14 do
-
-net.modules[2].modules[1].modules[i].accGradParameters = function(x) end
+for i=1,2 do
+		net.modules[2].modules[i].modules[1].accGradParameters = function(x) end
+		net.modules[2].modules[i].modules[5].accGradParameters = function(x) end
+		net.modules[2].modules[i].modules[9].accGradParameters = function(x) end
 end
 
 
@@ -220,32 +222,26 @@ function eval()
     local Err = 0
     net:evaluate()
     acc = 0
+    val_data:resetCounter()
 
     for iter = 1, maxiter do
         collectgarbage()
         err = 0
-        print("Debug")
         data_tm:reset(); data_tm:resume()
         data_im, data_label, extra = val_data:getBatch()
         data_tm:stop()
         
-        print("Debug")
         input:copy(data_im:squeeze())
 	    label:copy(data_label)
 
         local output = net:forward(input)
         err = criterion:forward(output, label)
         Err = Err + err
-        print("Debug")
         print(output:view(1,opt.batchSize))
 
         output:apply(function(x)
-            l = 1
-            if x > 1 then
-                l = -1
-            end
-            return l
-        end);
+            l = 1 if x > opt.margin then l = -1 end
+            return l end)
 
         local ac =  output:eq(data_label:cuda()):sum()
         acc = acc + ac
@@ -274,6 +270,8 @@ local fx = function(x)
 
     -- forward, backwards
     local output = net:forward(input)
+    print(output:view(1, opt.batchSize))
+
     err = criterion:forward(output, label)
     local df_do = criterion:backward(output, label)
     net:backward(input, df_do)
@@ -281,31 +279,31 @@ local fx = function(x)
     -- locals:
     local norm,sign= torch.norm,torch.sign
     -- Loss:
-    local lambda = 0.01 --0.2
+    local lambda = 0 --0.2
     err = err + lambda * norm(parameters,2)^2/2
     -- Gradients:
     gradParameters:add(parameters:clone():mul(lambda))
     
-    local oo = torch.CudaTensor(output:size())
-    for i=1,output:size(1) do
-        if output[i] > 1 then
-            oo[i] = -1
-        else
-            oo[i] = 1
-        end
-    end
-    --[[output:apply(function(x)
-        local l = -1
-        if x > 1 then
-            l = 1
-        end
-        return l
-    end);]]
 
+    output:apply(function(x) ll = 1
+                             if x > opt.margin then
+                                ll = -1
+                             end
+                             return ll 
+                             end)
+    --local oo = torch.CudaTensor(output:size())
+    --for i=1,output:size(1) do
+      --  if output[i] > 1 then
+        --    oo[i] = -1
+        --else
+          --  oo[i] = 1
+        --end
+    --end
 
-    preds = oo:eq(label)
-    acc = oo:eq(label):sum()
-    acc = acc*100/oo:size(1)
+    preds = output:eq(label)
+    acc = preds:sum()
+    acc = acc*100/output:size(1)
+    
     -- return gradients
     return err, gradParameters
 end
@@ -413,6 +411,10 @@ for counter = 1,opt.niter do
         optimState = {
             learningRate = opt.lr,
             beta1 = opt.beta1,
+            learningRateDecay = 0.0,
+            momentum = 0.9,
+            dampening = 0.0,
+            weightDecay = 5e-4
         }
     end
 end

@@ -77,16 +77,13 @@ function data:queueJob()
     else
         local indexStart = (self.jobCount-1) * opt.batchSize + 1
         local indexEnd = (indexStart + opt.batchSize - 1)
-        print(indexStart, indexEnd, self:size())
         if indexEnd <= self:size() then
             self.threads:addjob(function()
-                print("DEBUG inside queue")
                 return trainLoader:get(indexStart, indexEnd)
             end,
                 self._pushResult)
         else
-            self.jobCount = 0
-            print("RESETTING")
+            self:resetCounter()
         end
     end
 end
@@ -104,14 +101,15 @@ function data:getBatch()
     local res
     repeat
         self:queueJob()
-        print("DEBUG on data")
         self.threads:dojob()
-        print("DEBUG on data")
         res = result[1]
         result[1] = nil
     until torch.type(res) == 'table'
-    print("DEBUG on data")
     return unpack(res)
+end
+
+function data:resetCounter()
+    self.jobCount = 0
 end
 
 function data:size()
