@@ -192,6 +192,12 @@ if opt.gpu > 0 and opt.cudnn > 0 then
     net = cudnn.convert(net, cudnn)
 end
 
+for i=1,14 do
+
+net.modules[2].modules[1].modules[i].accGradParameters = function(x) end
+end
+
+
 -- show graphics
 disp = require 'display'
 --disp.configure({hostname='40.71.213.246', port=9000})
