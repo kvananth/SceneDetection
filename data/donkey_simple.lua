@@ -146,10 +146,11 @@ function dataset:trainHook(paths)
         if torch.uniform() > 0.5 then out = image.hflip(out); end
         --out:mul(2):add(-1) -- make it [0, 1] -> [-1, 1]
 
-        -- subtract mean
-        -- for c=1,3 do
-        -- out[{ c, {}, {} }]:add(-self.mean[c])
-        --end
+        --[[ subtract mean
+        for c=1,3 do
+            out[{ c, {}, {} }]:add(-self.mean[c])
+        end]]
+        
         twins[ii] = out
     end
     return twins

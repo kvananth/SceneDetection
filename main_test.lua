@@ -11,7 +11,7 @@ opt = {
     fineSize = 224,       -- crop this size from the loaded image
     nClasses = 401,       -- number of category
     lr = 0.001,           -- learning rate
-    lr_decay = 2000,     -- how often to decay learning rate (in epoch's)
+    lr_decay = 4000,     -- how often to decay learning rate (in epoch's)
     beta1 = 0.9,          -- momentum term for adam
     meanIter = 0,         -- how many iterations to retrieve for mean estimation
     saveIter = 500,     -- write check point on this interval
@@ -80,20 +80,21 @@ if opt.finetune == '' then -- build network from scratch
     local prefeatures = safe_unpack(premodel.features)
     prefeatures:add(cudnn.SpatialMaxPooling(3,3,2,2))
     prefeatures:add(nn.View(-1):setNumInputDims(3))
+    
+    for i=1,#prefeatures.modules do
+        prefeatures.modules[i].accGradParameters = function(x) end
+    end
+
     local pretop = safe_unpack(premodel.top)
     pretop.modules[1] = nn.Linear(12544, 4096)
-    
+    pretop:add(nn.Linear(4096,512))
 
     --prefeatures:insert(nn.Probe())
 
-
     local siamese = nn.Sequential():add(prefeatures):add(pretop)
-
-    --if opt.gpu > 0 then
-      --  siamese:cuda()
-    --end
-
-
+   
+    --parameters, gradParameters = siamese:getParameters()
+    
     local siamese_encoder = nn.ParallelTable()
     siamese_encoder:add(siamese)
     siamese_encoder:add(siamese:clone('weight','bias', 'gradWeight','gradBias'))
@@ -102,16 +103,13 @@ if opt.finetune == '' then -- build network from scratch
     net:add(nn.SplitTable(2))
     net:add(siamese_encoder)
     net:add(nn.PairwiseDistance(2))
-
+    
     -- initialize the model
     local function weights_init(m)
         local name = torch.type(m)
         if name:find('Convolution') then
             m.weight:normal(0.0, 0.01)
             m.bias:fill(0)
-        elseif name:find('BatchNormalization') then
-            if m.weight then m.weight:normal(1.0, 0.02) end
-            if m.bias then m.bias:fill(0) end
         end
     end
     --net:apply(weights_init) -- loop over all layers, applying weights_init
@@ -121,13 +119,9 @@ else -- load in existing network
     net = torch.load(opt.finetune)
 end
 
-parameters, gradParameters = net:getParameters()
-print(net)
-
 -- define the loss
 --local criterion = nn.CrossEntropyCriterion()
 local criterion = nn.HingeEmbeddingCriterion(opt.margin)
-
 
 -- create the data placeholders
 local input = torch.Tensor(opt.batchSize, 2, 3, opt.fineSize, opt.fineSize)
@@ -151,12 +145,8 @@ if opt.gpu > 0 and opt.cudnn > 0 then
     net = cudnn.convert(net, cudnn)
 end
 
---[[for i=1,2 do
-		net.modules[2].modules[i].modules[1].accGradParameters = function(x) end
-		net.modules[2].modules[i].modules[5].accGradParameters = function(x) end
-		net.modules[2].modules[i].modules[9].accGradParameters = function(x) end
-end]]
-
+parameters, gradParameters = net:getParameters()
+print(net)
 
 -- show graphics
 disp = require 'display'
@@ -226,20 +216,18 @@ local fx = function(x)
     input:copy(data_im:squeeze())
     label:copy(data_label)
     
-    --print("before ", net.modules[2].modules[1].modules[1].modules[13].gradWeight[1][1])
-
+    print("before ", net.modules[2].modules[1].modules[1].modules[13].gradWeight[1][1])
     -- forward, backwards
     local output = net:forward(input)
-    --print(output:view(1, opt.batchSize))
+    print(output:view(1, opt.batchSize))
     err = criterion:forward(output, label)
     local df_do = criterion:backward(output, label)
     --print("output: ", output:normal():view(2,opt.batchSize/2))
-    --print("DEBUG df_do: ", df_do:normal():view(2, opt.batchSize/2))
+    print("DEBUG df_do: ", df_do:view(2, opt.batchSize/2))
     net:backward(input, df_do:normal())
 
-    --print("after update ", net.modules[2].modules[1].modules[1].modules[13].gradWeight[1][1])
+    print("after update ", net.modules[2].modules[1].modules[1].modules[13].gradWeight[1][1])
 
-    -- locals:
     local norm,sign= torch.norm,torch.sign
     -- Loss:
     local lambda = 0.1 --0.2
@@ -291,8 +279,8 @@ for counter = 1,opt.niter do
     tm:reset()
 
     -- do one iteration
-    --optim.adam(fx, parameters, optimState)
-    optim.sgd(fx, parameters, optimState)
+    optim.adam(fx, parameters, optimState)
+    --optim.sgd(fx, parameters, optimState)
 
     if counter%100 == 0 then torch.save('traindata.t7', {data_im, data_label, extra, preds}) end
 
