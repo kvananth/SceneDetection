@@ -5,33 +5,34 @@ require 'optim'
 -- to specify these at runtime, you can do, e.g.:
 --    $ lr=0.001 th main.lua
 opt = {
-  dataset = 'simple',   -- indicates what dataset load to use (in data.lua)
-  nThreads = 32,        -- how many threads to pre-fetch data
-  batchSize = 256,      -- self-explanatory
-  loadSize = 256,       -- when loading images, resize first to this size
-  fineSize = 224,       -- crop this size from the loaded image 
-  nClasses = 401,       -- number of category
-  lr = 0.001,           -- learning rate
-  lr_decay = 30000,     -- how often to decay learning rate (in epoch's)
-  beta1 = 0.9,          -- momentum term for adam
-  meanIter = 0,         -- how many iterations to retrieve for mean estimation
-  saveIter = 10000,     -- write check point on this interval
-  niter = 100000,       -- number of iterations through dataset
-  gpu = 1,              -- which GPU to use; consider using CUDA_VISIBLE_DEVICES instead
-  cudnn = 1,            -- whether to use cudnn or not
-  finetune = '',        -- if set, will load this network instead of starting from scratch
-  randomize = 1,        -- whether to shuffle the data file or not
-  cropping = 'random',  -- options for data augmentation
-  display_port = 9001,  -- port to push graphs
-  name = paths.basename(paths.thisfile()):sub(1,-5), -- the name of the experiment (by default, filename)
-  data_root = '/data/vision/torralba/deepscene/places365_standard/',
-  data_list = '/data/vision/torralba/commonsense/places-resources/places365/train.txt',
-  mean = {-0.083300798050439,-0.10651495109198,-0.17295466315224},
+    dataset = 'simple',   -- indicates what dataset load to use (in data.lua)
+    nThreads = 8,        -- how many threads to pre-fetch data
+    batchSize = 16,      -- self-explanatory
+    loadSize = 256,       -- when loading images, resize first to this size
+    fineSize = 224,       -- crop this size from the loaded image
+    nClasses = 401,       -- number of category
+    lr = 0.001,           -- learning rate
+    lr_decay = 5000,     -- how often to decay learning rate (in epoch's)
+    beta1 = 0.9,          -- momentum term for adam
+    meanIter = 0,         -- how many iterations to retrieve for mean estimation
+    saveIter = 2000,     -- write check point on this interval
+    niter = 100000,       -- number of iterations through dataset
+    gpu = 1,              -- which GPU to use; consider using CUDA_VISIBLE_DEVICES instead
+    cudnn = 1,            -- whether to use cudnn or not
+    finetune = '',        -- if set, will load this network instead of starting from scratch
+    randomize = 0,        -- whether to shuffle the data file or not
+    cropping = 'random',  -- options for data augmentation
+    display_port = 9000,  -- port to push graphs
+    name = 'full', -- the name of the experiment (by default, filename)
+    data_root = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/frames/',
+    data_list = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/train.txt',
+    data_list_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/test.txt',
+    mean = {-0.083300798050439,-0.10651495109198,-0.17295466315224},
+    margin = 1, -- margin for loss function
 }
 
 -- one-line argument parser. parses enviroment variables to override the defaults
 for k,v in pairs(opt) do opt[k] = tonumber(os.getenv(k)) or os.getenv(k) or opt[k] end
-opt.hostname = sys.execute('hostname -s') .. ':' ..opt.display_port
 
 print(opt)
 
@@ -41,61 +42,64 @@ torch.setdefaulttensortype('torch.FloatTensor')
 
 -- if using GPU, select indicated one
 if opt.gpu > 0 then
-  require 'cunn'
-  cutorch.setDevice(opt.gpu)
+    require 'cunn'
+    require 'cudnn'
+    cutorch.setDevice(opt.gpu)
 end
 
--- create data loader
 local DataLoader = paths.dofile('data/data.lua')
+opt['split'] = 'train'
 local data = DataLoader.new(opt.nThreads, opt.dataset, opt)
-print("Dataset: " .. opt.dataset, " Size: ", data:size())
+print("Train dataset size: ", data:size())
+
+--local Val_DataLoader = paths.dofile('data/data.lua'
+opt['split'] = 'val'
+local val_data = DataLoader.new(opt.nThreads, opt.dataset, opt)
+print("Val dataset size: ", val_data:size())
+
+function safe_unpack(self)
+    if self.unpack and self.model then
+        return self:unpack()
+    else
+        local model = self.model
+        for k,v in ipairs(model:listModules()) do
+            if v.weight and not v.gradWeight then
+                v.gradWeight = v.weight:clone()
+                v.gradBias = v.bias:clone()
+            end
+        end
+        return model
+    end
+end
+
 
 -- define the model
 local net
 if opt.finetune == '' then -- build network from scratch
-  net = nn.Sequential()
-  net:add(nn.SpatialConvolution(3,96,11,11,4,4,2,2))       -- 224 -> 55
-  net:add(nn.SpatialBatchNormalization(96))
-  net:add(nn.ReLU(true))
-  net:add(nn.SpatialMaxPooling(3,3,2,2))                   -- 55 ->  27
-  net:add(nn.SpatialConvolution(96,256,5,5,1,1,2,2))       --  27 -> 27
-  net:add(nn.SpatialBatchNormalization(256))
-  net:add(nn.ReLU(true))
-  net:add(nn.SpatialMaxPooling(3,3,2,2))                   --  27 ->  13
-  net:add(nn.SpatialConvolution(256,384,3,3,1,1,1,1))      --  13 ->  13
-  net:add(nn.SpatialBatchNormalization(384))
-  net:add(nn.ReLU(true))
-  net:add(nn.SpatialConvolution(384,256,3,3,1,1,1,1))      --  13 ->  13
-  net:add(nn.SpatialBatchNormalization(256))
-  net:add(nn.ReLU(true))
-  net:add(nn.SpatialConvolution(256,256,3,3,1,1,1,1))      --  13 ->  13
-  net:add(nn.SpatialBatchNormalization(256))
-  net:add(nn.ReLU(true))
-  net:add(nn.SpatialMaxPooling(3,3,2,2))                   -- 13 -> 6
 
-  net:add(nn.View(256*6*6))
-  net:add(nn.Linear(256*6*6, 4096))
-  net:add(nn.BatchNormalization(4096))
-  net:add(nn.ReLU())
-  net:add(nn.Dropout(0.5))
-  net:add(nn.Linear(4096, 4096))
-  net:add(nn.BatchNormalization(4096))
-  net:add(nn.ReLU())
-  net:add(nn.Dropout(0.5))
-  net:add(nn.Linear(4096, opt.nClasses))
+    local premodel = torch.load('data/imagenet_pretrained_alexnet.t7')
+    local prefeatures = safe_unpack(premodel.features)
+    prefeatures:add(cudnn.SpatialMaxPooling(3,3,2,2))
+    prefeatures:add(nn.View(-1):setNumInputDims(3))
 
-  -- initialize the model
-  local function weights_init(m)
-    local name = torch.type(m)
-    if name:find('Convolution') then
-      m.weight:normal(0.0, 0.01)
-      m.bias:fill(0)
-    elseif name:find('BatchNormalization') then
-      if m.weight then m.weight:normal(1.0, 0.02) end
-      if m.bias then m.bias:fill(0) end
-    end
-  end
-  net:apply(weights_init) -- loop over all layers, applying weights_init
+    local pretop = safe_unpack(premodel.top)
+    pretop.modules[1] = nn.Linear(12544, 4096)
+    pretop:add(nn.Linear(4096,512))
+
+    --prefeatures:insert(nn.Probe())
+
+    local siamese = nn.Sequential():add(prefeatures):add(pretop)
+
+    --parameters, gradParameters = siamese:getParameters()
+
+    local siamese_encoder = nn.ParallelTable()
+    siamese_encoder:add(siamese)
+    siamese_encoder:add(siamese:clone('weight','bias', 'gradWeight','gradBias'))
+
+    net = nn.Sequential()
+    net:add(nn.SplitTable(2))
+    net:add(siamese_encoder)
+    net:add(nn.PairwiseDistance(2))
 
 else -- load in existing network
   print('loading ' .. opt.finetune)
@@ -130,11 +134,12 @@ if opt.gpu > 0 and opt.cudnn > 0 then
   net = cudnn.convert(net, cudnn)
 end
 
--- get a vector of parameters
 local parameters, gradParameters = net:getParameters()
+print(net)
 
 -- show graphics
 disp = require 'display'
+opt.hostname = sys.execute('hostname -s') .. ':' ..opt.display_port
 disp.url = 'http://localhost:' .. opt.display_port .. '/events'
 
 -- optimization closure

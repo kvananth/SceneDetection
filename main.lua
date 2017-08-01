@@ -1,6 +1,7 @@
 require 'torch'
 require 'nn'
 require 'optim'
+
 -- to specify these at runtime, you can do, e.g.:
 --    $ lr=0.001 th main.lua
 opt = {
