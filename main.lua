@@ -168,14 +168,15 @@ do
             net.modules[2].modules[1].modules[i].bias = prefeatures.modules[i].bias
         end
     end
-
-    for i=1,#premodel.top.model do
-        local fname = torch.type(net.modules[2].modules[1].modules[i+19]) --Linear Layer starts at 20
-        local mname = torch.type(pretop.modules[i])
-        if fname:find('Linear') and mname:find('Linear') then
-            net.modules[2].modules[1].modules[i+19].weight = premodel.top.model.modules[i].weight
-            net.modules[2].modules[1].modules[i+19].bias = pretop.modules[i].bias
-        end
+    if true then
+				for i=1,#premodel.top.model do
+						local fname = torch.type(net.modules[2].modules[1].modules[i+19]) --Linear Layer starts at 20
+						local mname = torch.type(pretop.modules[i])
+						if fname:find('Linear') and mname:find('Linear') then
+								net.modules[2].modules[1].modules[i+19].weight = premodel.top.model.modules[i].weight
+								net.modules[2].modules[1].modules[i+19].bias = pretop.modules[i].bias
+						end
+				end
     end
 end
 end
@@ -232,7 +233,7 @@ function eval()
         data_tm:stop()
         
         input:copy(data_im:squeeze())
-	    label:copy(data_label)
+	      label:copy(data_label)
 
         local output = net:forward(input)
         err = criterion:forward(output, label)
@@ -291,19 +292,12 @@ local fx = function(x)
                              end
                              return ll 
                              end)
-    --local oo = torch.CudaTensor(output:size())
-    --for i=1,output:size(1) do
-      --  if output[i] > 1 then
-        --    oo[i] = -1
-        --else
-          --  oo[i] = 1
-        --end
-    --end
+    
+ 
 
     preds = output:eq(label)
     acc = preds:sum()
     acc = acc*100/output:size(1)
-    
     -- return gradients
     return err, gradParameters
 end
@@ -338,6 +332,7 @@ for counter = 1,opt.niter do
     -- do one iteration
     --optim.adam(fx, parameters, optimState)
     optim.sgd(fx, parameters, optimState)
+    if counter%100 == 0 then torch.save('traindata.t7', {data_im, data_label, extra, preds}) end
 
     print(('%s %s Iter: [%7d / %7d]  Time: %.3f  DataTime: %.3f  Err: %.4f Acc: %.2f'):format(
         opt.name, opt.hostname, counter, opt.niter, tm:time().real, data_tm:time().real, err, acc))

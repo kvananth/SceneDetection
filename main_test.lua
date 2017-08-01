@@ -5,8 +5,8 @@ require 'optim'
 --    $ lr=0.001 th main.lua
 opt = {
     dataset = 'simple',   -- indicates what dataset load to use (in data.lua)
-    nThreads = 8,        -- how many threads to pre-fetch data
-    batchSize = 16,      -- self-explanatory
+    nThreads = 16,        -- how many threads to pre-fetch data
+    batchSize = 32,      -- self-explanatory
     loadSize = 256,       -- when loading images, resize first to this size
     fineSize = 224,       -- crop this size from the loaded image
     nClasses = 401,       -- number of category
@@ -14,19 +14,20 @@ opt = {
     lr_decay = 2000,     -- how often to decay learning rate (in epoch's)
     beta1 = 0.9,          -- momentum term for adam
     meanIter = 0,         -- how many iterations to retrieve for mean estimation
-    saveIter = 1000,     -- write check point on this interval
+    saveIter = 500,     -- write check point on this interval
     niter = 100000,       -- number of iterations through dataset
     gpu = 1,              -- which GPU to use; consider using CUDA_VISIBLE_DEVICES instead
     cudnn = 1,            -- whether to use cudnn or not
     finetune = '',        -- if set, will load this network instead of starting from scratch
     randomize = 1,        -- whether to shuffle the data file or not
     cropping = 'random',  -- options for data augmentation
-    display_port = 9001,  -- port to push graphs
+    display_port = 9000,  -- port to push graphs
     name = 'full', -- the name of the experiment (by default, filename)
     data_root = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/frames/',
-    data_list = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/train_small.txt',
+    data_list = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/train.txt',
     data_list_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/test.txt',
     mean = {-0.083300798050439,-0.10651495109198,-0.17295466315224},
+    margin = 2, -- margin for loss function
 }
 
 -- one-line argument parser. parses enviroment variables to override the defaults
@@ -74,45 +75,28 @@ local parameters, gradParameters
 -- define the model
 local net
 if opt.finetune == '' then -- build network from scratch
+     
+    local premodel = torch.load('data/imagenet_pretrained_alexnet.t7')
+    local prefeatures = safe_unpack(premodel.features)
+    prefeatures:add(cudnn.SpatialMaxPooling(3,3,2,2))
+    prefeatures:add(nn.View(-1):setNumInputDims(3))
+    local pretop = safe_unpack(premodel.top)
+    pretop.modules[1] = nn.Linear(12544, 4096)
+    
 
-    local features = nn.Sequential()
-    features:add(cudnn.SpatialConvolution(3,96,11,11,4,4,2,2))       -- 224 -> 55
-    features:add(cudnn.SpatialBatchNormalization(96))
-    features:add(cudnn.ReLU(true))
-    features:add(cudnn.SpatialMaxPooling(3,3,2,2))                   -- 55 ->  27
-    features:add(cudnn.SpatialConvolution(96,256,5,5,1,1,2,2))       --  27 -> 27
-    features:add(cudnn.SpatialBatchNormalization(256))
-    features:add(cudnn.ReLU(true))
-    features:add(cudnn.SpatialMaxPooling(3,3,2,2))                   --  27 ->  13
-    features:add(cudnn.SpatialConvolution(256,384,3,3,1,1,1,1))      --  13 ->  13
-    features:add(cudnn.SpatialBatchNormalization(384))
-    features:add(cudnn.ReLU(true))
-    features:add(cudnn.SpatialConvolution(384,256,3,3,1,1,1,1))      --  13 ->  13
-    features:add(cudnn.SpatialBatchNormalization(256))
-    features:add(cudnn.ReLU(true))
-    features:add(cudnn.SpatialConvolution(256,256,3,3,1,1,1,1))      --  13 ->  13
-    features:add(cudnn.SpatialBatchNormalization(256))
-    features:add(cudnn.ReLU(true))
-    features:add(cudnn.SpatialMaxPooling(3,3,2,2))                   -- 13 -> 6
-    features:add(nn.View(-1):setNumInputDims(3))
+    --prefeatures:insert(nn.Probe())
 
-    features:add(nn.Linear(9216,4096))
-    features:add(cudnn.ReLU(true))
-    features:add(nn.Dropout(0.5))
-    features:add(nn.Linear(4096,4096))
-    features:add(cudnn.ReLU(true))
-    features:add(nn.Dropout(0.5))
-    features:add(nn.Linear(4096,512))
 
-    if opt.gpu > 0 then
-        features:cuda()
-    end
+    local siamese = nn.Sequential():add(prefeatures):add(pretop)
 
-    parameters, gradParameters = features:getParameters()
+    --if opt.gpu > 0 then
+      --  siamese:cuda()
+    --end
+
 
     local siamese_encoder = nn.ParallelTable()
-    siamese_encoder:add(features)
-    siamese_encoder:add(features:clone('weight','bias', 'gradWeight','gradBias'))
+    siamese_encoder:add(siamese)
+    siamese_encoder:add(siamese:clone('weight','bias', 'gradWeight','gradBias'))
 
     net = nn.Sequential()
     net:add(nn.SplitTable(2))
@@ -137,11 +121,12 @@ else -- load in existing network
     net = torch.load(opt.finetune)
 end
 
+parameters, gradParameters = net:getParameters()
 print(net)
 
 -- define the loss
 --local criterion = nn.CrossEntropyCriterion()
-local criterion = nn.HingeEmbeddingCriterion(1)
+local criterion = nn.HingeEmbeddingCriterion(opt.margin)
 
 
 -- create the data placeholders
@@ -152,32 +137,6 @@ local err
 -- timers to roughly profile performance
 local tm = torch.Timer()
 local data_tm = torch.Timer()
-
-if true then
-do
-    local premodel = torch.load('data/imagenet_pretrained_alexnet.t7')
-    local prefeatures = safe_unpack(premodel.features)
-    local pretop = safe_unpack(premodel.top)
-
-    for i=1,#premodel.features.model do
-        local fname = torch.type(net.modules[2].modules[1].modules[i])
-        local mname = torch.type(prefeatures.modules[i])
-        if fname:find('Convolution') and mname:find('Convolution') then
-            net.modules[2].modules[1].modules[i].weight = premodel.features.model.modules[i].weight
-            net.modules[2].modules[1].modules[i].bias = prefeatures.modules[i].bias
-        end
-    end
-
-    for i=1,#premodel.top.model do
-        local fname = torch.type(net.modules[2].modules[1].modules[i+19]) --Linear Layer starts at 20
-        local mname = torch.type(pretop.modules[i])
-        if fname:find('Linear') and mname:find('Linear') then
-            net.modules[2].modules[1].modules[i+19].weight = premodel.top.model.modules[i].weight
-            net.modules[2].modules[1].modules[i+19].bias = pretop.modules[i].bias
-        end
-    end
-end
-end
 
 -- ship everything to GPU if needed
 if opt.gpu > 0 then
@@ -192,15 +151,15 @@ if opt.gpu > 0 and opt.cudnn > 0 then
     net = cudnn.convert(net, cudnn)
 end
 
-for i=1,14 do
-
-net.modules[2].modules[1].modules[i].accGradParameters = function(x) end
-end
+--[[for i=1,2 do
+		net.modules[2].modules[i].modules[1].accGradParameters = function(x) end
+		net.modules[2].modules[i].modules[5].accGradParameters = function(x) end
+		net.modules[2].modules[i].modules[9].accGradParameters = function(x) end
+end]]
 
 
 -- show graphics
 disp = require 'display'
---disp.configure({hostname='40.71.213.246', port=9000})
 opt.hostname = sys.execute('hostname -s') .. ':' ..opt.display_port
 disp.url = 'http://localhost:' .. opt.display_port .. '/events'
 
@@ -211,6 +170,7 @@ local confusion = optim.ConfusionMatrix({-1,1})
 local acc = 0
 local data_im,data_label
 local preds
+collectgarbage()
 
 function eval()
     local ntest = math.huge
@@ -220,32 +180,26 @@ function eval()
     local Err = 0
     net:evaluate()
     acc = 0
+    val_data:resetCounter()
 
     for iter = 1, maxiter do
         collectgarbage()
         err = 0
-        print("Debug")
         data_tm:reset(); data_tm:resume()
         data_im, data_label, extra = val_data:getBatch()
         data_tm:stop()
         
-        print("Debug")
         input:copy(data_im:squeeze())
-	    label:copy(data_label)
+	      label:copy(data_label)
 
         local output = net:forward(input)
         err = criterion:forward(output, label)
         Err = Err + err
-        print("Debug")
         print(output:view(1,opt.batchSize))
 
         output:apply(function(x)
-            l = 1
-            if x > 1 then
-                l = -1
-            end
-            return l
-        end);
+            l = 1 if x > opt.margin then l = -1 end
+            return l end)
 
         local ac =  output:eq(data_label:cuda()):sum()
         acc = acc + ac
@@ -271,41 +225,40 @@ local fx = function(x)
     -- ship data to GPU
     input:copy(data_im:squeeze())
     label:copy(data_label)
+    
+    --print("before ", net.modules[2].modules[1].modules[1].modules[13].gradWeight[1][1])
 
     -- forward, backwards
     local output = net:forward(input)
+    --print(output:view(1, opt.batchSize))
     err = criterion:forward(output, label)
     local df_do = criterion:backward(output, label)
-    net:backward(input, df_do)
+    --print("output: ", output:normal():view(2,opt.batchSize/2))
+    --print("DEBUG df_do: ", df_do:normal():view(2, opt.batchSize/2))
+    net:backward(input, df_do:normal())
+
+    --print("after update ", net.modules[2].modules[1].modules[1].modules[13].gradWeight[1][1])
 
     -- locals:
     local norm,sign= torch.norm,torch.sign
     -- Loss:
-    local lambda = 0 --0.2
+    local lambda = 0.1 --0.2
     err = err + lambda * norm(parameters,2)^2/2
     -- Gradients:
     gradParameters:add(parameters:clone():mul(lambda))
     
-    local oo = torch.CudaTensor(output:size())
-    for i=1,output:size(1) do
-        if output[i] > 1 then
-            oo[i] = -1
-        else
-            oo[i] = 1
-        end
-    end
-    --[[output:apply(function(x)
-        local l = -1
-        if x > 1 then
-            l = 1
-        end
-        return l
-    end);]]
+    output:apply(function(x) ll = 1
+                             if x > opt.margin then
+                                ll = -1
+                             end
+                             return ll 
+                             end)
+    
+ 
 
-
-    preds = oo:eq(label)
-    acc = oo:eq(label):sum()
-    acc = acc*100/oo:size(1)
+    preds = output:eq(label)
+    acc = preds:sum()
+    acc = acc*100/output:size(1)
     -- return gradients
     return err, gradParameters
 end
@@ -321,6 +274,10 @@ local acc_history = {}
 local optimState = {
     learningRate = opt.lr,
     beta1 = opt.beta1,
+    learningRateDecay = 0.0,
+    momentum = 0.9,
+    dampening = 0.0,
+    weightDecay = 5e-4
 }
 
 
@@ -334,14 +291,17 @@ for counter = 1,opt.niter do
     tm:reset()
 
     -- do one iteration
-    optim.adam(fx, parameters, optimState)
+    --optim.adam(fx, parameters, optimState)
+    optim.sgd(fx, parameters, optimState)
+
+    if counter%100 == 0 then torch.save('traindata.t7', {data_im, data_label, extra, preds}) end
+
     print(('%s %s Iter: [%7d / %7d]  Time: %.3f  DataTime: %.3f  Err: %.4f Acc: %.2f'):format(
         opt.name, opt.hostname, counter, opt.niter, tm:time().real, data_tm:time().real, err, acc))
     --print(confusion)
 
-    if counter == 1 or counter % opt.saveIter == 0 then
+    if counter % opt.saveIter == 0 then
         valerr, valacc = eval()
-
 
         --table.insert(val_history, {counter, valerr})
         --disp.plot(val_history, {win=5, title=opt.name, labels = {"iteration", "valError"}})
@@ -366,7 +326,7 @@ for counter = 1,opt.niter do
     end
 
     if counter % 100 == 1 then
-        w = net.modules[2].modules[1].modules[1].weight:float():clone()
+        w = net.modules[2].modules[1].modules[1].modules[1].weight:float():clone()
         for i=1,w:size(1) do w[i]:mul(1./w[i]:norm()) end
         disp.image(w, {win=2, title=(opt.name .. ' conv1')})
 
@@ -407,6 +367,10 @@ for counter = 1,opt.niter do
         optimState = {
             learningRate = opt.lr,
             beta1 = opt.beta1,
+            learningRateDecay = 0.0,
+            momentum = 0.9,
+            dampening = 0.0,
+            weightDecay = 5e-4
         }
     end
 end
