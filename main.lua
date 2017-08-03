@@ -170,14 +170,14 @@ do
         end
     end
     if true then
-				for i=1,#premodel.top.model do
-						local fname = torch.type(net.modules[2].modules[1].modules[i+19]) --Linear Layer starts at 20
-						local mname = torch.type(pretop.modules[i])
-						if fname:find('Linear') and mname:find('Linear') then
-								net.modules[2].modules[1].modules[i+19].weight = premodel.top.model.modules[i].weight
-								net.modules[2].modules[1].modules[i+19].bias = pretop.modules[i].bias
-						end
-				end
+	for i=1,#premodel.top.model do
+			local fname = torch.type(net.modules[2].modules[1].modules[i+19]) --Linear Layer starts at 20
+			local mname = torch.type(pretop.modules[i])
+			if fname:find('Linear') and mname:find('Linear') then
+					net.modules[2].modules[1].modules[i+19].weight = premodel.top.model.modules[i].weight
+					net.modules[2].modules[1].modules[i+19].bias = pretop.modules[i].bias
+			end
+	end
     end
 end
 end

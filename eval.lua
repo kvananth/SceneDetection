@@ -14,7 +14,7 @@ opt = {
   randomize = 0,
   cropping = 'center',
   data_root = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/frames/',
-  data_list_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/test.txt',
+  data_list_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/test_caves.txt',
   mean = {-0.083300798050439,-0.10651495109198,-0.17295466315224},
   margin = 1
 }
@@ -90,8 +90,7 @@ for iter = 1, maxiter do
 	    return l end)
 
 	local ac =  output:eq(data_label:cuda()):sum()
-        print(output, data_label, ac)
-        os.exit()
+        --print(output, data_label, ac)
 	acc = acc + ac
 	counter = counter + opt.batchSize
 
