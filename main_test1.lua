@@ -10,8 +10,8 @@ opt = {
     loadSize = 256,       -- when loading images, resize first to this size
     fineSize = 224,       -- crop this size from the loaded image
     nClasses = 401,       -- number of category
-    lr = 0.001,           -- learning rate
-    lr_decay = 20000,     -- how often to decay learning rate (in epoch's)
+    lr = 0.005,           -- learning rate
+    lr_decay = 10000,     -- how often to decay learning rate (in epoch's)
     beta1 = 0.9,          -- momentum term for adam
     meanIter = 0,         -- how many iterations to retrieve for mean estimation
     saveIter = 5000,     -- write check point on this interval
@@ -23,9 +23,9 @@ opt = {
     cropping = 'random',  -- options for data augmentation
     display_port = 9000,  -- port to push graphs
     name = 'full', -- the name of the experiment (by default, filename)
-    data_root = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/frames/',
-    data_list = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/train.txt',
-    data_list_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/test.txt',
+    data_root = '',--'/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/frames/',
+    data_list = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/train_small_avg.txt',
+    data_list_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/test_caves_avg.txt',
     mean = {-0.083300798050439,-0.10651495109198,-0.17295466315224},
     margin = 1, -- margin for loss function
 }
@@ -79,6 +79,7 @@ if opt.finetune == '' then -- build network from scratch
     
  
     premodel = torch.load('data/imagenet_pretrained_alexnet.t7')
+    --premodel = torch.load('data/imagenet_pretrained_vgg.t7')
     prefeatures = safe_unpack(premodel.features)
     pretop = safe_unpack(premodel.top)
 
@@ -88,11 +89,12 @@ if opt.finetune == '' then -- build network from scratch
          --siamese:get(j).accGradParameters = function(x) end
     end
     siamese:add(cudnn.SpatialMaxPooling(4,4,2,2))
+    --siamese:add(cudnn.SpatialMaxPooling(2,2,2,2))
     siamese:add(nn.View(-1):setNumInputDims(3))
     for j=1,#pretop.modules do
         siamese:add(pretop:get(j))
     end
-    siamese:add(nn.Linear(4096,512))
+    --siamese:add(nn.Linear(4096,512))
 
     local siamese_encoder = nn.ParallelTable()
     siamese_encoder:add(siamese)
@@ -191,7 +193,7 @@ function eval()
             return l end)
 
         preds = output:eq(label)
-        torch.save('eval_' .. iter .. '.t7', {data_im, data_label, output})
+        if iter%500 == 0 then torch.save('eval_' .. iter .. '.t7', {data_im, data_label, output}) end
         local ac =  output:eq(data_label:cuda()):sum()
         acc = acc + ac
         counter = counter + opt.batchSize
@@ -221,7 +223,7 @@ local fx = function(x)
     
     local output = net:forward(input)
     err = criterion:forward(output, label)
-    print(output:view(4,8))
+    print(output:view(1, opt.batchSize))
 
     local df_do = criterion:backward(output, label)
     net:backward(input, df_do)

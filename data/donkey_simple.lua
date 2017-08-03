@@ -74,8 +74,8 @@ function dataset:sample(quantity)
         local idx = torch.random(1, #self.data)
 
         local im1, im2 = self.data[idx]:match("([^,]+),([^,]+)")
-        im1 = self.data_root .. '/' .. im1 .. '.jpg'
-        im2 = self.data_root .. '/' .. im2 .. '.jpg'
+        im1 = self.data_root .. '/' .. im1 --.. '.jpg'
+        im2 = self.data_root .. '/' .. im2 --.. '.jpg'
 
         --local data_path = self.data_root .. '/' .. self.data[idx]
         local data_label = self.label[idx]
@@ -102,8 +102,8 @@ function dataset:get(start_idx,stop_idx)
             break
         end
         local im1, im2 = self.data[idx]:match("([^,]+),([^,]+)")
-        im1 = self.data_root .. '/' .. im1 .. '.jpg'
-        im2 = self.data_root .. '/' .. im2 .. '.jpg'
+        im1 = self.data_root .. '/' .. im1 --.. '.jpg'
+        im2 = self.data_root .. '/' .. im2 --.. '.jpg'
 
         --local data_path = self.data_root .. '/' .. self.data[idx]
         local data_label = self.label[idx]
