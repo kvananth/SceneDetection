@@ -4,17 +4,17 @@ require 'optim'
 -- to specify these at runtime, you can do, e.g.:
 --    $ lr=0.001 th main.lua
 opt = {
-    dataset = 'simple',   -- indicates what dataset load to use (in data.lua)
-    nThreads = 8,        -- how many threads to pre-fetch data
-    batchSize = 8,      -- self-explanatory
+    dataset = 'hdf5',   -- indicates what dataset load to use (in data.lua)
+    nThreads = 4,        -- how many threads to pre-fetch data
+    batchSize = 16,      -- self-explanatory
     loadSize = 256,       -- when loading images, resize first to this size
     fineSize = 224,       -- crop this size from the loaded image
     nClasses = 401,       -- number of category
     lr = 0.001,           -- learning rate
-    lr_decay = 6000,     -- how often to decay learning rate (in epoch's)
+    lr_decay = 3000,     -- how often to decay learning rate (in epoch's)
     beta1 = 0.9,          -- momentum term for adam
     meanIter = 0,         -- how many iterations to retrieve for mean estimation
-    saveIter = 5000,     -- write check point on this interval
+    saveIter = 200,     -- write check point on this interval
     niter = 100000,       -- number of iterations through dataset
     gpu = 1,              -- which GPU to use; consider using CUDA_VISIBLE_DEVICES instead
     cudnn = 1,            -- whether to use cudnn or not
@@ -28,6 +28,10 @@ opt = {
     data_list_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/test_caves.txt',
     mean = {-0.083300798050439,-0.10651495109198,-0.17295466315224},
     margin = 1, -- margin for loss function
+    labelDim = 1,
+    labelName = 'scenes',
+    labelFile = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/temporalData/train_small.h5',
+    labelFile_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/temporalData/test_small.h5'
 }
 
 -- one-line argument parser. parses enviroment variables to override the defaults
@@ -53,7 +57,7 @@ print("Train dataset size: ", data:size())
 
 --local Val_DataLoader = paths.dofile('data/data.lua'
 opt['split'] = 'val'
-local val_data = DataLoader.new(opt.nThreads, opt.data_list_val, opt)
+local val_data = DataLoader.new(opt.nThreads, opt.dataset, opt)
 print("Val dataset size: ", val_data:size())
 
 function safe_unpack(self)
@@ -79,43 +83,49 @@ if opt.finetune == '' then -- build network from scratch
     
  
     --premodel = torch.load('data/resnet-101.t7')
-    --premodel = torch.load('data/imagenet_pretrained_alexnet.t7')
-    premodel = torch.load('data/imagenet_pretrained_vgg.t7')
+    premodel = torch.load('data/imagenet_pretrained_alexnet.t7')
+    --premodel = torch.load('data/imagenet_pretrained_vgg.t7')
     prefeatures = safe_unpack(premodel.features)
     pretop = safe_unpack(premodel.top)
 
     siamese = nn.Sequential()
     for j=1,#prefeatures.modules do
          siamese:add(prefeatures:get(j))
-         if j<= 20 then
+         --[[if j<= 9 then --20 for vgg
              siamese:get(j).accGradParameters = function(x) end
-         end
+         end]]
     end
-    --siamese:add(cudnn.SpatialMaxPooling(4,4,2,2))
-    siamese:add(cudnn.SpatialMaxPooling(2,2,2,2))
+    siamese:add(cudnn.SpatialMaxPooling(4,4,2,2)) -- for alexnet
+    --siamese:add(cudnn.SpatialMaxPooling(2,2,2,2)) -- for vgg
     siamese:add(nn.View(-1):setNumInputDims(3))
-    for j=1,#pretop.modules do
+    
+    for j=1,#pretop do
         siamese:add(pretop:get(j))
     end
-    --siamese:add(nn.Linear(4096,512))
 
     local siamese_encoder = nn.ParallelTable()
     siamese_encoder:add(siamese)
-    siamese_encoder:add(siamese:clone('weight','bias', 'gradWeight','gradBias'))
+    for i=1,4 do
+        siamese_encoder:add(siamese:clone('weight','bias', 'gradWeight','gradBias'))
+    end
 
     net = nn.Sequential()
     net:add(nn.SplitTable(2))
     net:add(siamese_encoder)
-    net:add(nn.PairwiseDistance(2))
+    net:add(nn.JoinTable(2))
+    net:add(nn.Linear(5*4096,1024))
+    net:add(cudnn.ReLU(true))
+    net:add(nn.Dropout(0.5))
+    net:add(nn.Linear(1024,5))
     
     -- initialize the model
     local function weights_init(m)
         local name = torch.type(m)
-        if name:find('Convolution') then
-            m.weight:normal(0.0, 0.01)
-            m.bias:fill(0)
+            if name:find('Convolution') then
+                m.weight:normal(0.0, 0.01)
+                m.bias:fill(0)
+            end
         end
-    end
     --net:apply(weights_init) -- loop over all layers, applying weights_init
 
 else -- load in existing network
@@ -124,11 +134,11 @@ else -- load in existing network
 end
 
 -- define the loss
---local criterion = nn.CrossEntropyCriterion()
-local criterion = nn.HingeEmbeddingCriterion(opt.margin)
+local criterion = nn.CrossEntropyCriterion()
+--local criterion = nn.HingeEmbeddingCriterion(opt.margin)
 
 -- create the data placeholders
-local input = torch.Tensor(opt.batchSize, 2, 3, opt.fineSize, opt.fineSize)
+local input = torch.Tensor(opt.batchSize, 5, 3, opt.fineSize, opt.fineSize)
 local label = torch.Tensor(opt.batchSize)
 local err
 
@@ -191,13 +201,14 @@ function eval()
         Err = Err + err
         --print(output:view(1,opt.batchSize))
 
-        output:apply(function(x)
-            l = 1 if x > opt.margin then l = -1 end
-            return l end)
-
-        preds = output:eq(label)
-        if iter%25 == 0 then torch.save('eval_' .. iter .. '.t7', {data_im, data_label, output}) end
-        local ac =  output:eq(data_label:cuda()):sum()
+        ac = 0
+        local _,preds = output:float():sort(2, true)
+        preds = preds:narrow(2,1,1)
+        for i=1, opt.batchSize do
+           if preds[i][1] == data_label[i][1] then
+               ac = ac + 1
+           end
+        end
         acc = acc + ac
         counter = counter + opt.batchSize
 
@@ -218,7 +229,7 @@ local fx = function(x)
     data_tm:reset(); data_tm:resume()
     data_im,data_label, extra = data:getBatch()
     data_tm:stop()
-
+    
     -- ship data to GPU
     input:copy(data_im:squeeze())
     label:copy(data_label)
@@ -226,7 +237,8 @@ local fx = function(x)
     
     local output = net:forward(input)
     err = criterion:forward(output, label)
-    print(output:view(1, opt.batchSize))
+    --print(output:view(1, opt.batchSize))
+    
 
     local df_do = criterion:backward(output, label)
     net:backward(input, df_do)
@@ -238,18 +250,27 @@ local fx = function(x)
     -- Gradients:
     gradParameters:add(parameters:clone():mul(lambda))
     
-    output:apply(function(x) ll = 1
+    
+    acc = 0
+    local _,preds = output:float():sort(2, true)
+    preds = preds:narrow(2,1,1)
+    for i=1, opt.batchSize do
+        if preds[i][1] == data_label[i][1] then
+            acc = acc + 1
+        end
+    end
+
+
+    --[[output:apply(function(x) ll = 1
                              if x > opt.margin then
                                 ll = -1
                              end
                              return ll 
                              end)
     
- 
-
-    preds = output:eq(label)
-    acc = preds:sum()
-    acc = acc*100/output:size(1)
+    preds = output:eq(label)]]
+    --acc = preds:sum()
+    acc = acc*100/opt.batchSize
     -- return gradients
     return err, gradParameters
 end
@@ -311,7 +332,7 @@ for counter = 1,opt.niter do
         table.insert(history, {counter, err, valerr})
         disp.plot(history, {win=1, title=opt.name, labels = {"iteration", "Train Err", "Val Err"}})
     end
-    if true then
+    if false then
 	    if counter % 100 == 1 then
 		--w = net.modules[2].modules[1].modules[1].modules[1].weight:float():clone()
 		--for i=1,w:size(1) do w[i]:mul(1./w[i]:norm()) end
@@ -342,12 +363,10 @@ for counter = 1,opt.niter do
 		disp.plot(lr_history, {win=4, title=opt.name, labels = {"iteration", "lr"}})
 	    end
     end
-    confusion:zero()
-    acc = 0
 
     -- decay the learning rate, if requested
     if opt.lr_decay > 0 and counter % opt.lr_decay == 0 then
-        opt.lr = opt.lr
+        opt.lr = opt.lr/2
         print('Decreasing learning rate to ' .. opt.lr)
 
         -- create new optimState to reset momentum

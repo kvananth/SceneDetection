@@ -26,13 +26,16 @@ function dataset:__init(args)
   --assert(self.labelName, "must specify labelName (the variable in the labelFile to read)")
   assert(self.labelFile, "must specify labelFile (the hdf5 to load)")
   
+  local labelFile
   if args.split == 'val' then
-      args.labelFile = args.labelFile_val
+      labelFile = args.labelFile_val
   else
-      args.labelFile = args.labelFile
+      labelFile = args.labelFile
   end
   
-  local fd = hdf5.open(self.labelFile, 'r')
+  print(args.split, labelFile)
+  
+  local fd = hdf5.open(labelFile, 'r')
   self.shots = fd:read('/shots'):all()
   self.scenes = fd:read('/scenes'):all()
   fd:close()
@@ -49,7 +52,7 @@ function dataset:__init(args)
     self.label_idx:insert(tonumber(split[2]))
   end]]
 
-  print('found ' .. self:size() .. ' items')
+  print('found ' .. self.shots:size(1) .. ' shots ' .. self.scenes:size(1) .. ' scenes')
 end
 
 function dataset:size()
@@ -60,13 +63,17 @@ end
 function dataset:tableToOutput(dataTable, labelTable, extraTable)
    local data, scalarLabels, labels
    local quantity = #labelTable
-   assert(dataTable[1]:dim() == 4)
-   data = torch.Tensor(quantity, 5, 3, self.fineSize, self.fineSize)
+   assert(dataTable[1]:dim() == 3)
+   data = torch.Tensor(quantity, 3, self.fineSize, self.fineSize)
    scalarLabels = torch.Tensor(quantity, self.labelDim):fill(-1111)
+   
+   local randPerm = torch.randperm(#dataTable)
+
    for i=1,#dataTable do
-      data[i]:copy(dataTable[i])
+      local idx = randPerm[i]
+      data[idx]:copy(dataTable[idx])
       --print(labelTable[i])
-      scalarLabels[i] = labelTable[i]
+      scalarLabels[idx] = labelTable[idx]
    end
    return data, scalarLabels, extraTable
 end
@@ -78,20 +85,21 @@ function dataset:sample(quantity)
    local labelTable = {}
    local extraTable = {}
    for i=1,quantity do
-      local out = torch.Tensor(5, 3, self.fineSize, self.fineSize)
-      local data_label = torch.random(1, 5)
-      
-      for i=1, out:size(1) do
-          if i == data_label then
-              local idx = torch.random(1, self.scenes:size(1))
-              out[i] = self.scenes[idx]
-          else
-              local idx = torch.random(1, self.shots:size(1))
-              out[i] = self.shots[idx]
-          end
+      local out = torch.Tensor(3, self.fineSize, self.fineSize)
+      local data_label
+      local factor = (self.split == 'val') and 2 or 4
+
+      if i>quantity/2 then
+          local idx = torch.random(1, self.scenes:size(1))
+ 	  out = self.scenes[idx]
+          data_label = 2
+      else	
+          local idx = torch.random(1, self.shots:size(1))
+	  out = self.shots[idx]
+          data_label = 1
       end
 
-      --local out = self:trainHook(data_path) 
+      out = self:trainHook(out) 
       table.insert(dataTable, out)
       table.insert(labelTable, data_label)
       table.insert(extraTable, data_label)
@@ -124,9 +132,9 @@ function dataset:get(start_idx,stop_idx)
 end
 
 -- function to load the image, jitter it appropriately (random crops etc.)
-function dataset:trainHook(path)
+function dataset:trainHook(input)
    collectgarbage()
-   local input = self:loadImage(path)
+   --local input = self:loadImage(path)
    local iW = input:size(3)
    local iH = input:size(2)
 
@@ -147,14 +155,15 @@ function dataset:trainHook(path)
    local out = image.crop(input, w1, h1, w1 + oW, h1 + oH)
    assert(out:size(2) == oW)
    assert(out:size(3) == oH)
+
    -- do hflip with probability 0.5
-   if torch.uniform() > 0.5 then out = image.hflip(out); end
-   out:mul(2):add(-1) -- make it [0, 1] -> [-1, 1]
+   if torch.uniform() > 0.5 then out = image.hflip(out) end
+   --out:mul(2):add(-1) -- make it [0, 1] -> [-1, 1]
 
     -- subtract mean
-    for c=1,3 do
+    --[[for c=1,3 do
       out[{ c, {}, {} }]:add(-self.mean[c])
-    end
+    end]]
 
    return out
 end

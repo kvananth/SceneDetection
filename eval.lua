@@ -4,7 +4,7 @@ require 'optim'
 opt = {
   dataset = 'simple',
   nThreads = 8,
-  batchSize = 16,
+  batchSize = 64,
   loadSize = 256,
   fineSize = 224,
   gpu = 1,
@@ -84,12 +84,13 @@ for iter = 1, maxiter do
 	local output = net:forward(input)
 	err = criterion:forward(output, label)
 	Err = Err + err
-	print(output:view(1,opt.batchSize))
+	--print(output:view(1,opt.batchSize))
 	output:apply(function(x)
 	    l = 1 if x > opt.margin then l = -1 end
 	    return l end)
 
-	local ac =  output:eq(data_label:cuda()):sum()
+        if iter%15 == 0 then torch.save('eval_' .. iter .. '.t7', {data_im, data_label, output}) end	
+        local ac =  output:eq(data_label:cuda()):sum()
         --print(output, data_label, ac)
 	acc = acc + ac
 	counter = counter + opt.batchSize

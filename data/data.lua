@@ -14,8 +14,12 @@ function data.new(n, dataset_name, opt_, split)
     end
 
     self.split = split
-
-    self.randomize = opt_.randomize
+    
+    --if self.split == 'val' then
+      --  self.randomize = 0
+    --else
+        self.randomize = opt_.randomize
+    --end
 
     local donkey_file
     if dataset_name == 'simple' then
@@ -24,6 +28,8 @@ function data.new(n, dataset_name, opt_, split)
         donkey_file = 'donkey_hdf5.lua'
     elseif dataset_name == 'video' then
         donkey_file = 'donkey_video.lua'
+    elseif dataset_name == 'hdf5_binary' then
+        donkey_file = 'donkey_hdf5_binary.lua'
     else
         error('Unknown dataset: ' .. dataset_name)
     end
