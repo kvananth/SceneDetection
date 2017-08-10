@@ -83,13 +83,13 @@ end
 -- define the model
 local net
 if opt.finetune == '' then -- build network from scratch
-    
+
 
     local modelType = 'vgg' -- alex/vgg/res
-  
+
     if modelType == 'alex' then
         premodel = torch.load('data/imagenet_pretrained_alexnet.t7')
-    elseif modelType == 'vgg' then 
+    elseif modelType == 'vgg' then
         premodel = torch.load('data/imagenet_pretrained_vgg.t7')
     elseif modelType == 'res' then
         premodel = torch.load('data/resnet-101.t7')
@@ -101,9 +101,9 @@ if opt.finetune == '' then -- build network from scratch
 
     if modelType == 'alex' then prefeats:add(cudnn.SpatialMaxPooling(4,4,2,2)) end-- for alexnet
     if modelType == 'vgg' then prefeats:add(cudnn.SpatialMaxPooling(2,2,2,2)) end -- for vgg
-    if modelType == 'alex' or modelType == 'vgg' then  
+    if modelType == 'alex' or modelType == 'vgg' then
         prefeats:add(nn.View(-1):setNumInputDims(3))
-        for i=1, #pretop do prefeats:add(pretop:get(i)) end    
+        for i=1, #pretop do prefeats:add(pretop:get(i)) end
     end
     local classifier = nn.Sequential()
     --classifier:add(nn.Linear(4096,1024))
@@ -114,7 +114,7 @@ if opt.finetune == '' then -- build network from scratch
     net = nn.Sequential()
     if modelType == 'alex' or modelType == 'vgg' then net:add(prefeats) else net:add(premodel) end
     net:add(classifier)
-    
+
 else -- load in existing network
     print('loading ' .. opt.finetune)
     net = torch.load(opt.finetune)
@@ -122,7 +122,7 @@ end
 
 -- define the loss
 --local weightVector = torch.Tensor({(2932+775)/2932, (775+2932)/775})
-local weightVector = torch.Tensor({1, 2})
+--local weightVector = torch.Tensor({1, 2})
 local criterion = nn.CrossEntropyCriterion()
 --local criterion = nn.HingeEmbeddingCriterion(opt.margin)
 
@@ -177,16 +177,16 @@ function eval()
     acc = 0
     val_data:resetCounter()
     confusion:zero()
-   
+
     for iter = 1, maxiter do
         collectgarbage()
         err = 0
         data_tm:reset(); data_tm:resume()
         data_im, data_label, extra = val_data:getBatch()
         data_tm:stop()
-        
+
         input:copy(data_im:squeeze())
-	label:copy(data_label)
+        label:copy(data_label)
 
         local output = net:forward(input)
         err = criterion:forward(output, label)
@@ -198,13 +198,13 @@ function eval()
         local _,preds = output:float():sort(2, true)
         preds = preds:narrow(2,1,1)
         for i=1, opt.batchSize do
-           confusion:add(preds[i][1], data_label[i][1])
+            confusion:add(preds[i][1], data_label[i][1])
 
-           if preds[i][1] == data_label[i][1] then
-               ac = ac + 1
-           end
+            if preds[i][1] == data_label[i][1] then
+                ac = ac + 1
+            end
         end
-        
+
         torch.save("checkpoints/eval_" .. iter, {data_im, data_label, preds, output})
         acc = acc + ac
         counter = counter + opt.batchSize
@@ -215,7 +215,7 @@ function eval()
     print(('Eval Summary Err: %.6f Acc: %.2f'):format(Err/maxiter, acc/counter))
     print(confusion)
     print("-----------------------------------------------------------------------")
-    
+
     return Err/maxiter, acc/counter
 end
 
@@ -226,7 +226,7 @@ local fx = function(x)
     data_tm:reset(); data_tm:resume()
     data_im,data_label, extra = data:getBatch()
     data_tm:stop()
-    
+
     -- ship data to GPU
     input:copy(data_im:squeeze())
     label:copy(data_label)
@@ -236,15 +236,15 @@ local fx = function(x)
 
     local df_do = criterion:backward(output, label)
     net:backward(input, df_do)
-    
+
     local norm,sign= torch.norm,torch.sign
     -- Loss:
     local lambda = 0.1 --0.2
     --err = err + lambda * norm(parameters,2)^2/2
     -- Gradients:
     --gradParameters:add(parameters:clone():mul(lambda))
-    
-    
+
+
     acc = 0
     local _,preds = output:float():sort(2, true)
     preds = preds:narrow(2,1,1)
@@ -272,25 +272,25 @@ optimState = {}
 opt['cnn_lr'] = 0.0001
 opt['classifier_lr'] = 0.001
 for i=1, #parameters do
-  -- VGG: 29, ALEXNET: 13
-  if i<29 then table.insert(optimState, {
-                              learningRate = opt.cnn_lr,
-                              learningRateDecay = 0.0,
-                              momentum = 0.9,
-                              dampening = 0.0,
-                              weightDecay = 5e-4
-                            }
-              ) 
-   else
-       table.insert(optimState, {
-                              learningRate = opt.classifier_lr,
-                              learningRateDecay = 0.0,
-                              momentum = 0.9,
-                              dampening = 0.0,
-                              weightDecay = 5e-4
-                            }
-              )
-   end
+    -- VGG: 29, ALEXNET: 13
+    if i<29 then table.insert(optimState, {
+        learningRate = opt.cnn_lr,
+        learningRateDecay = 0.0,
+        momentum = 0.9,
+        dampening = 0.0,
+        weightDecay = 5e-4
+    }
+    )
+    else
+        table.insert(optimState, {
+            learningRate = opt.classifier_lr,
+            learningRateDecay = 0.0,
+            momentum = 0.9,
+            dampening = 0.0,
+            weightDecay = 5e-4
+        }
+        )
+    end
 end
 
 print('Starting Optimization...')
@@ -310,19 +310,19 @@ for counter = 1,opt.niter do
     print(('%s %s Iter: [%7d / %7d]  Time: %.3f  DataTime: %.3f  Err: %.4f Acc: %.2f'):format(
         opt.name, opt.hostname, counter, opt.niter, tm:time().real, data_tm:time().real, err, acc))
 
-	for i=1, #parameters do
-	  local feval = function(x)
+    for i=1, #parameters do
+        local feval = function(x)
             local norm,sign= torch.norm,torch.sign
             -- Loss:
             local lambda = 0.2 --0.2
             local error = err + lambda * norm(parameters[i],2)^2/2
             gradParameters[i]:add(parameters[i]:clone():mul(lambda))
 
-	    return error, gradParameters[i]
-	  end
-	  
-	  optim.sgd(feval, parameters[i], optimState[i])
-	end
+            return error, gradParameters[i]
+        end
+
+        optim.sgd(feval, parameters[i], optimState[i])
+    end
 
     --optim.adam(fx, parameters, optimState)
     --optim.sgd(fx, parameters, optimState)
@@ -330,26 +330,26 @@ for counter = 1,opt.niter do
 
     if counter == 1 or counter % opt.saveIter == 0 then
         valerr, valacc = eval()
-      
+
         currentScore = valacc
-        
+
         --table.insert(val_history, {counter, valerr})
         --disp.plot(val_history, {win=5, title=opt.name, labels = {"iteration", "valError"}})
         table.insert(acc_history, {counter, valacc})
         disp.plot(acc_history, {win=6, title=opt.name, labels = {"iteration", "accuracy"}})
 
-        if counter == 1 or currentScore > bestScore then 
+        if counter == 1 or currentScore > bestScore then
             bestScore = currentScore
 
-        -- save checkpoint
-        -- :clearState() compacts the model so it takes less space on disk
-        print('Saving ' .. opt.name .. '/iter' .. counter .. '_net.t7')
-        paths.mkdir('checkpoints')
-        paths.mkdir('checkpoints/' .. opt.name)
-        torch.save('checkpoints/' .. opt.name .. '/iter' .. counter .. '_net.t7', net:clearState())
-        torch.save('checkpoints/' .. opt.name .. '/iter' .. counter .. '_optim.t7', optimState)
-        torch.save('checkpoints/' .. opt.name .. '/iter' .. counter .. '_history.t7', history)
-        
+            -- save checkpoint
+            -- :clearState() compacts the model so it takes less space on disk
+            print('Saving ' .. opt.name .. '/iter' .. counter .. '_net.t7')
+            paths.mkdir('checkpoints')
+            paths.mkdir('checkpoints/' .. opt.name)
+            torch.save('checkpoints/' .. opt.name .. '/iter' .. counter .. '_net.t7', net:clearState())
+            torch.save('checkpoints/' .. opt.name .. '/iter' .. counter .. '_optim.t7', optimState)
+            torch.save('checkpoints/' .. opt.name .. '/iter' .. counter .. '_history.t7', history)
+
         end
 
     end
@@ -361,46 +361,46 @@ for counter = 1,opt.niter do
     end
 
     if false then
-	    if counter % 100 == 1 then
-		--w = net.modules[2].modules[1].modules[1].modules[1].weight:float():clone()
-		--for i=1,w:size(1) do w[i]:mul(1./w[i]:norm()) end
-		--disp.image(w, {win=2, title=(opt.name .. ' conv1')})
+        if counter % 100 == 1 then
+            --w = net.modules[2].modules[1].modules[1].modules[1].weight:float():clone()
+            --for i=1,w:size(1) do w[i]:mul(1./w[i]:norm()) end
+            --disp.image(w, {win=2, title=(opt.name .. ' conv1')})
 
-		local nn = 8 -- # of imgs to display
-		--preds = preds:narrow(1,1,nn)
-                print(data_im:size())
-		disp.images(data[{{1,1}, {}, {}, {}}], { win=3, width=1000})
+            local nn = 8 -- # of imgs to display
+            --preds = preds:narrow(1,1,nn)
+            print(data_im:size())
+            disp.images(data[{{1,1}, {}, {}, {}}], { win=3, width=1000})
 
-		--table.insert(lr_history, {counter, optimState.learningRate})
-		--disp.plot(lr_history, {win=4, title=opt.name, labels = {"iteration", "lr"}})
-	    end
+            --table.insert(lr_history, {counter, optimState.learningRate})
+            --disp.plot(lr_history, {win=4, title=opt.name, labels = {"iteration", "lr"}})
+        end
     end
 
-	if opt.lr_decay > 0 and counter % opt.lr_decay == 0 then
-             opt.classifier_lr = opt.classifier_lr / 2
-             opt.cnn_lr = opt.cnn_lr / 2
+    if opt.lr_decay > 0 and counter % opt.lr_decay == 0 then
+        opt.classifier_lr = opt.classifier_lr / 2
+        opt.cnn_lr = opt.cnn_lr / 2
 
-		for i =1, #parameters do
-		  if i<15 then table.insert(optimState, {
-					      learningRate = opt.cnn_lr,
-					      learningRateDecay = 0.0,
-					      momentum = 0.9,
-					      dampening = 0.0,
-					      weightDecay = 5e-4
-					    }
-			      )
-		   else
-		       table.insert(optimState, {
-					      learningRate = opt.classifier_lr,
-					      learningRateDecay = 0.0,
-					      momentum = 0.9,
-					      dampening = 0.0,
-					      weightDecay = 5e-4
-					    }
-			      )
-		   end
-		end
-            print('Decreasing learning rate')
+        for i =1, #parameters do
+            if i<15 then table.insert(optimState, {
+                learningRate = opt.cnn_lr,
+                learningRateDecay = 0.0,
+                momentum = 0.9,
+                dampening = 0.0,
+                weightDecay = 5e-4
+            }
+            )
+            else
+                table.insert(optimState, {
+                    learningRate = opt.classifier_lr,
+                    learningRateDecay = 0.0,
+                    momentum = 0.9,
+                    dampening = 0.0,
+                    weightDecay = 5e-4
+                }
+                )
+            end
+        end
+        print('Decreasing learning rate')
 
-	end
+    end
 end
