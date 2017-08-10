@@ -6,20 +6,14 @@ local data = {}
 local result = {}
 local unpack = unpack and unpack or table.unpack
 
-function data.new(n, dataset_name, opt_, split)
+function data.new(n, dataset_name, opt_)
     opt_ = opt_ or {}
     local self = {}
     for k,v in pairs(data) do
         self[k] = v
     end
-
-    self.split = split
     
-    --if self.split == 'val' then
-      --  self.randomize = 0
-    --else
-        self.randomize = opt_.randomize
-    --end
+    self.randomize = opt_.randomize
 
     local donkey_file
     if dataset_name == 'simple' then

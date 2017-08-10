@@ -2,7 +2,7 @@ require 'torch'
 require 'nn'
 require 'optim'
 opt = {
-  dataset = 'simple',
+  dataset = 'hdf5_binary',
   nThreads = 8,
   batchSize = 64,
   loadSize = 256,

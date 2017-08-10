@@ -33,11 +33,11 @@ function dataset:__init(args)
       labelFile = args.labelFile
   end
   
-  print(args.split, labelFile)
-  
   local fd = hdf5.open(labelFile, 'r')
   self.shots = fd:read('/shots'):all()
   self.scenes = fd:read('/scenes'):all()
+
+  self.val_data = (args.split == 'val') and self.shots:cat(self.scenes, 1) or torch.Tensor(10,3,224,224):fill(0)
   fd:close()
 
   -- we are going to read args.data_list
@@ -64,15 +64,13 @@ function dataset:tableToOutput(dataTable, labelTable, extraTable)
    local data, scalarLabels, labels
    local quantity = #labelTable
    assert(dataTable[1]:dim() == 3)
-   data = torch.Tensor(quantity, 3, self.fineSize, self.fineSize)
-   scalarLabels = torch.Tensor(quantity, self.labelDim):fill(-1111)
-   
+   local data = torch.Tensor(quantity, 3, self.fineSize, self.fineSize)
+   local scalarLabels = torch.Tensor(quantity, self.labelDim):fill(-1111)
    local randPerm = torch.randperm(#dataTable)
 
    for i=1,#dataTable do
       local idx = randPerm[i]
       data[idx]:copy(dataTable[idx])
-      --print(labelTable[i])
       scalarLabels[idx] = labelTable[idx]
    end
    return data, scalarLabels, extraTable
@@ -112,21 +110,22 @@ function dataset:get(start_idx,stop_idx)
    assert(start_idx)
    assert(stop_idx)
    assert(start_idx<stop_idx)
-   assert(start_idx<=#self.data)
+
    local dataTable = {}
    local labelTable = {}
    local extraTable = {}
+   assert(start_idx<=self.val_data:size(1))
+
    for idx=start_idx,stop_idx do
-      if idx > #self.data then
+      if idx > self.val_data:size(1) then
         break
       end
-      local data_path = self.data_root .. '/' .. self.data[idx]
-      local data_label = self.hdf5_data[self.label_idx[idx]]
 
-      local out = self:trainHook(data_path) 
+      local out = self.val_data[idx]
+      out = self:trainHook(out) 
       table.insert(dataTable, out)
       table.insert(labelTable, data_label)
-      table.insert(extraTable, self.data[idx])
+      table.insert(extraTable, data_label)
    end
    return self:tableToOutput(dataTable,labelTable,extraTable)
 end
