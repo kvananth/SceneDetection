@@ -37,20 +37,13 @@ function dataset:__init(args)
   self.shots = fd:read('/shots'):all()
   self.scenes = fd:read('/scenes'):all()
 
-  self.val_data = (args.split == 'val') and self.shots:cat(self.scenes, 1) or torch.Tensor(10,3,224,224):fill(0)
+  if (args.split == 'val') then
+    self.val_data = self.shots:cat(self.scenes, 1)
+    self.val_label = torch.Tensor(self.shots:size(1)):fill(1):cat(torch.Tensor(self.scenes:size(1)):fill(2),1)
+    assert(self.val_data:size(1) == self.val_label:size(1))
+  end
+  
   fd:close()
-
-  -- we are going to read args.data_list
-  -- we split on the tab
-  -- we use tds.Vec() because they have no memory constraint 
-  --[[self.data = tds.Vec()
-  self.label_idx = tds.Vec()
-  for line in io.lines(args.data_list) do 
-    local split = {}
-    for k in string.gmatch(line, "%S+") do table.insert(split, k) end
-    self.data:insert(split[1])
-    self.label_idx:insert(tonumber(split[2]))
-  end]]
 
   print('found ' .. self.shots:size(1) .. ' shots ' .. self.scenes:size(1) .. ' scenes')
 end
@@ -64,15 +57,17 @@ function dataset:tableToOutput(dataTable, labelTable, extraTable)
    local data, scalarLabels, labels
    local quantity = #labelTable
    assert(dataTable[1]:dim() == 3)
-   local data = torch.Tensor(quantity, 3, self.fineSize, self.fineSize)
+   local data = torch.Tensor(quantity, 3, self.fineSize, self.fineSize):fill(0)
    local scalarLabels = torch.Tensor(quantity, self.labelDim):fill(-1111)
    local randPerm = torch.randperm(#dataTable)
 
    for i=1,#dataTable do
       local idx = randPerm[i]
-      data[idx]:copy(dataTable[idx])
-      scalarLabels[idx] = labelTable[idx]
+      data[i] = dataTable[idx]
+      scalarLabels[i] = labelTable[idx]
    end
+   --torch.save('trainData.t7', {data, scalarLabels, extraTable})
+   
    return data, scalarLabels, extraTable
 end
 
@@ -85,7 +80,6 @@ function dataset:sample(quantity)
    for i=1,quantity do
       local out = torch.Tensor(3, self.fineSize, self.fineSize)
       local data_label
-      local factor = (self.split == 'val') and 2 or 4
 
       if i>quantity/2 then
           local idx = torch.random(1, self.scenes:size(1))
@@ -110,24 +104,25 @@ function dataset:get(start_idx,stop_idx)
    assert(start_idx)
    assert(stop_idx)
    assert(start_idx<stop_idx)
-
+   local count = 1
    local dataTable = {}
    local labelTable = {}
    local extraTable = {}
    assert(start_idx<=self.val_data:size(1))
+   local out = torch.Tensor(1+stop_idx-start_idx, 3, self.fineSize, self.fineSize)
+   local labels = torch.Tensor(1+stop_idx-start_idx)
 
    for idx=start_idx,stop_idx do
       if idx > self.val_data:size(1) then
         break
       end
 
-      local out = self.val_data[idx]
-      out = self:trainHook(out) 
-      table.insert(dataTable, out)
-      table.insert(labelTable, data_label)
-      table.insert(extraTable, data_label)
+      local outt = self.val_data[idx]
+      out[count] = self:trainHook(outt) 
+      labels[count] = self.val_label[idx]
+      count = count + 1
    end
-   return self:tableToOutput(dataTable,labelTable,extraTable)
+   return out, labels, extraTable
 end
 
 -- function to load the image, jitter it appropriately (random crops etc.)

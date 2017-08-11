@@ -13,7 +13,7 @@ function data.new(n, dataset_name, opt_)
         self[k] = v
     end
     
-    self.randomize = opt_.randomize
+    self.randomize = self.split == 'val' and 0 or opt_.randomize
 
     local donkey_file
     if dataset_name == 'simple' then

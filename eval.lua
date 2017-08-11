@@ -4,12 +4,12 @@ require 'optim'
 opt = {
     dataset = 'hdf5_binary',
     nThreads = 0,
-    batchSize = 32,
+    batchSize = 16,
     loadSize = 256,
     fineSize = 224,
     gpu = 1,
     cudnn = 1,
-    model = 'checkpoints/full/',
+    model = 'checkpoints/full_vgg/iter3200_net.t7',
     ntest = math.huge,
     randomize = 0,
     cropping = 'center',
@@ -20,11 +20,10 @@ opt = {
     labelDim = 1,
     labelName = 'scenes',
     --labelFile = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/temporalData/train_jungle.h5',
-    labelFile = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/temporalData/train_test.h5',
-    --labelFile = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/temporalData/train_jungle_deserts_ice.h5',
+    labelFile = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/temporalData/test_full_balanced_orig.h5',
     --labelFile_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/temporalData/test_freshWater.h5'
-    --labelFile_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/temporalData/test_full.h5'
-    labelFile_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/temporalData/test.h5'
+    --labelFile_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/test_balanced.h5'
+    labelFile_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/temporalData/test_full_balanced_orig.h5'
 }
 
 -- one-line argument parser. parses enviroment variables to override the defaults
@@ -106,8 +105,8 @@ for iter = 1, maxiter do
     preds = preds:narrow(2,1,1)
     ac=0
     for i=1, opt.batchSize do
-        confusion:add(preds[i][1], data_label[i][1])
-        if preds[i][1] == data_label[i][1] then
+        confusion:add(preds[i][1], data_label[i])
+        if preds[i][1] == data_label[i] then
             ac = ac + 1
         end
     end
@@ -120,4 +119,4 @@ end
 
 print(('Eval Summary Err: %.6f Acc: %.2f'):format(Err/maxiter, acc/counter))
 --torch.save("preds.t7", {outputs:float(), labels})
-print(('Summary  %s \t Accuracy: %.4f'):format(opt.model, acc/counter))
+print(confusion)

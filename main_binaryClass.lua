@@ -22,7 +22,7 @@ opt = {
     randomize = 1,        -- whether to shuffle the data file or not
     cropping = 'random',  -- options for data augmentation
     display_port = 9000,  -- port to push graphs
-    name = 'full', -- the name of the experiment (by default, filename)
+    name = 'full_vgg_reg', -- the name of the experiment (by default, filename)
     data_root = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/frames/',
     data_list = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/train_small.txt',
     data_list_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/test_caves.txt',
@@ -30,12 +30,11 @@ opt = {
     margin = 1, -- margin for loss function
     labelDim = 1,
     labelName = 'scenes',
-    --labelFile = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/temporalData/train_jungle.h5',
-    labelFile = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/temporalData/train_full_orig.h5',
-    --labelFile = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/temporalData/train_jungle_deserts_ice.h5',
-    --labelFile_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/temporalData/test_freshWater.h5'
+    --labelFile = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/temporalData/train_full_orig.h5',
+    labelFile = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/train_augmented.h5',
     --labelFile_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/temporalData/test_full.h5'
-    labelFile_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/temporalData/test_full_balanced_orig.h5'
+    --labelFile_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/temporalData/test_full_balanced_orig.h5'
+    labelFile_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/val_balanced.h5'
 }
 
 -- one-line argument parser. parses enviroment variables to override the defaults
@@ -62,6 +61,7 @@ print("Train dataset size: ", data:size())
 --local Val_DataLoader = paths.dofile('data/data.lua'
 opt['split'] = 'val'
 opt['nThreads'] = 0
+opt['randomize'] = 0
 local val_data = DataLoader.new(opt.nThreads, opt.dataset, opt)
 print("Val dataset size: ", val_data:size())
 
@@ -83,7 +83,6 @@ end
 -- define the model
 local net
 if opt.finetune == '' then -- build network from scratch
-
 
     local modelType = 'vgg' -- alex/vgg/res
 
@@ -198,9 +197,9 @@ function eval()
         local _,preds = output:float():sort(2, true)
         preds = preds:narrow(2,1,1)
         for i=1, opt.batchSize do
-            confusion:add(preds[i][1], data_label[i][1])
+            confusion:add(preds[i][1], data_label[i])
 
-            if preds[i][1] == data_label[i][1] then
+            if preds[i][1] == data_label[i] then
                 ac = ac + 1
             end
         end
@@ -314,7 +313,7 @@ for counter = 1,opt.niter do
         local feval = function(x)
             local norm,sign= torch.norm,torch.sign
             -- Loss:
-            local lambda = 0.2 --0.2
+            local lambda = 0.1 --0.2
             local error = err + lambda * norm(parameters[i],2)^2/2
             gradParameters[i]:add(parameters[i]:clone():mul(lambda))
 
