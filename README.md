@@ -1,4 +1,4 @@
-## Scene Detection on Videos
+## Detecting Scene Breaks in Videos using Deep CNN
 
 Installation
 ------------
