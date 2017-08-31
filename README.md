@@ -26,21 +26,11 @@ luarocks install https://raw.githubusercontent.com/szym/display/master/display-s
 
 Model
 -----
-Siamese Network with Contrastive Loss function
+Imagenet pretrained VGG16 - modified to do binary classification
 
 Data Setup 
 ----------
-By default, we assume you have a text file that lists your dataset. This text does not store your dataset; it just lists filepaths to it, and any meta data. Each line in this text file represents one training example, and its associated category ID. The syntax of the line should be: 
-```
-<filename><tab><number>
-```
-For example:
-```
-bedroom/IMG_050283.jpg    5
-bedroom/IMG_237761.jpg    5
-office/IMG_838222.jpg     10
-```
-The `<number>` should start counting at 1. 
+Check iPython notebook to preprocess data assuming you already extracted frames from the video.
 
 After you create this file, open `main.lua` and change `data_list` to point to this file. You can specify a `data_root` too, which will be prepended to each filename.
 
