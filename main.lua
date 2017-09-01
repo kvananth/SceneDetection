@@ -30,11 +30,11 @@ opt = {
     margin = 1, -- margin for loss function
     labelDim = 1,
     labelName = 'scenes',
-    --labelFile = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/temporalData/train_full_orig.h5',
-    labelFile = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/train_augmented.h5',
+    labelFile = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/temporalData/train_full_orig.h5',
+    --labelFile = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/train_augmented.h5',
     --labelFile_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/temporalData/test_full.h5'
-    --labelFile_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/temporalData/test_full_balanced_orig.h5'
-    labelFile_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/val_balanced.h5'
+    labelFile_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/temporalData/test_full_balanced_orig.h5'
+    --labelFile_val = '/mnt/data/story_break_data/BBC_Planet_Earth_Dataset/val_balanced.h5'
 }
 
 -- one-line argument parser. parses enviroment variables to override the defaults
